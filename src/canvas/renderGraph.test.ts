@@ -13,6 +13,10 @@ function createCanvasContext() {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     beginPath: vi.fn(),
+    closePath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    quadraticCurveTo: vi.fn(),
     arc: vi.fn(),
     fill: vi.fn(),
     stroke: vi.fn(),
@@ -22,7 +26,13 @@ function createCanvasContext() {
     rotate: vi.fn(),
     setLineDash: vi.fn(),
     fillText: vi.fn(),
-    measureText: vi.fn(() => ({ width: 20 })),
+    strokeText: vi.fn(),
+    strokeRect: vi.fn(),
+    measureText: vi.fn(() => ({
+      width: 20,
+      actualBoundingBoxAscent: 15,
+      actualBoundingBoxDescent: 5,
+    })),
     createLinearGradient: vi.fn(() => gradient),
   } as unknown as CanvasRenderingContext2D
 }
@@ -111,5 +121,31 @@ describe('graph layout content bounds', () => {
     renderGraph(visibleContext, document, { [asset.id]: asset })
     expect(visibleContext.fillText).toHaveBeenCalled()
     expect(visibleContext.drawImage).toHaveBeenCalled()
+  })
+
+  it('can leave node text to the SVG variable-font overlay', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    document.canvas.templateId = 'endfield'
+    const context = createCanvasContext()
+
+    renderGraph(context, document, {}, { drawNodeText: false })
+
+    expect(context.fillText).not.toHaveBeenCalled()
+  })
+
+  it('renders the selected APP profile sub-template', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    document.canvas.templateId = 'cute-pink'
+    document.profile.subTemplateId = 'cute_pink_2'
+    document.profile.nickname = '本地作者'
+    const context = createCanvasContext()
+
+    renderGraph(context, document, {})
+
+    expect(context.fillText).toHaveBeenCalledWith(
+      '本地作者',
+      expect.any(Number),
+      expect.any(Number),
+    )
   })
 })

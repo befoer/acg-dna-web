@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CONTENT_BOUNDS,
   DEFAULT_LABEL_SETTINGS,
+  DEFAULT_PROFILE_SETTINGS,
   GRAPH_SCHEMA_VERSION,
   GraphValidationError,
   createStarterGraph,
@@ -48,6 +49,44 @@ describe('graph document schema', () => {
       templateId: 'custom',
       contentBounds: DEFAULT_CONTENT_BOUNDS,
       labelSettings: DEFAULT_LABEL_SETTINGS,
+    })
+  })
+
+  it('defaults older schema v1 documents to an unselected local profile', () => {
+    const input = createStarterGraph('2026-07-15T00:00:00.000Z')
+    delete (input as Partial<typeof input>).profile
+
+    expect(parseGraphDocument(input).profile).toEqual(DEFAULT_PROFILE_SETTINGS)
+  })
+
+  it('validates the APP-compatible local profile settings', () => {
+    const invalid = createStarterGraph('2026-07-15T00:00:00.000Z')
+    ;(
+      invalid.profile as unknown as {
+        subTemplateId: string
+      }
+    ).subTemplateId = 'unknown'
+    expect(() => parseGraphDocument(invalid)).toThrow(/subTemplateId/)
+
+    invalid.profile.subTemplateId = null
+    invalid.profile.nickname = '超'.repeat(33)
+    expect(() => parseGraphDocument(invalid)).toThrow(/nickname/)
+  })
+
+  it('migrates the previous simple profile card without changing schema', () => {
+    const input = createStarterGraph('2026-07-15T00:00:00.000Z')
+    input.canvas.templateId = 'cute-pink'
+    ;(input as unknown as { profile: unknown }).profile = {
+      visible: true,
+      nickname: '本地作者',
+      position: 'bottom-left',
+    }
+
+    expect(parseGraphDocument(input).profile).toMatchObject({
+      subTemplateId: 'cute_pink_2',
+      nickname: '本地作者',
+      gender: 'none',
+      visibleLabelCount: 0,
     })
   })
 

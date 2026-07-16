@@ -6,16 +6,19 @@ import type {
   GraphLabelSettings,
   GraphLayoutMode,
   GraphNode,
+  GraphProfileSettings,
   GraphSubAttribute,
   GraphTemplateId,
 } from '../domain/graph'
 import { createStarterGraph, findGraphNode } from '../domain/graph'
+import { getDefaultProfileSubTemplateId } from '../domain/profileTemplates'
 import { getGraphTemplate } from '../domain/templates'
 import type { LocalImageAsset } from './assets'
 
 export interface EditorState {
   document: GraphDocument
   selectedNodeId: string | null
+  editingCustomTextId: string | null
   assets: Record<string, LocalImageAsset>
   statusMessage: string
   revision: number
@@ -35,6 +38,7 @@ export interface EditorPersistenceState {
 export interface EditorHistorySnapshot {
   document: GraphDocument
   selectedNodeId: string | null
+  editingCustomTextId: string | null
   assets: Record<string, LocalImageAsset>
 }
 
@@ -69,6 +73,13 @@ export type EditorAction =
       group?: string
       at: string
     }
+  | {
+      type: 'profile-settings-changed'
+      patch: Partial<GraphProfileSettings>
+      group?: string
+      at: string
+    }
+  | { type: 'custom-text-selected'; textId: string | null }
   | { type: 'node-selected'; nodeId: string | null }
   | { type: 'node-updated'; nodeId: string; patch: GraphNodePatch; at: string }
   | { type: 'category-added'; category: GraphCategory; at: string }
@@ -98,6 +109,13 @@ export type EditorAction =
       at: string
     }
   | { type: 'asset-removed'; nodeId: string; assetId: string; at: string }
+  | {
+      type: 'profile-avatar-attached'
+      asset: LocalImageAsset
+      replacedAssetId?: string
+      at: string
+    }
+  | { type: 'profile-avatar-removed'; assetId: string; at: string }
   | { type: 'status-changed'; message: string }
   | {
       type: 'editor-restored'
@@ -121,6 +139,7 @@ export function createInitialEditorState(
   return {
     document,
     selectedNodeId: document.categories[0]?.attributes[0]?.id ?? null,
+    editingCustomTextId: null,
     assets: {},
     statusMessage: '编辑器已就绪',
     revision: 0,
@@ -154,6 +173,7 @@ function historySnapshot(state: EditorState): EditorHistorySnapshot {
   return {
     document: state.document,
     selectedNodeId: state.selectedNodeId,
+    editingCustomTextId: state.editingCustomTextId,
     assets: state.assets,
   }
 }
@@ -350,6 +370,10 @@ export function editorReducer(
               templateId: template.id,
               contentBounds: { ...template.contentBounds },
             },
+            profile: {
+              ...state.document.profile,
+              subTemplateId: getDefaultProfileSubTemplateId(template.id),
+            },
           },
           action.at,
         ),
@@ -399,6 +423,39 @@ export function editorReducer(
           ? { key: 'label-settings:' + action.group, at: action.at }
           : undefined,
       )
+    case 'profile-settings-changed':
+      return markDirty(
+        state,
+        {
+          document: touchDocument(
+            {
+              ...state.document,
+              profile: {
+                ...state.document.profile,
+                ...action.patch,
+              },
+            },
+            action.at,
+          ),
+          statusMessage: '资料标题卡已更新',
+          ...(action.patch.customTexts &&
+          state.editingCustomTextId &&
+          !action.patch.customTexts.some(
+            (text) => text.id === state.editingCustomTextId,
+          )
+            ? { editingCustomTextId: null }
+            : {}),
+        },
+        action.group
+          ? { key: 'profile:' + action.group, at: action.at }
+          : undefined,
+      )
+    case 'custom-text-selected':
+      return {
+        ...state,
+        editingCustomTextId: action.textId,
+        selectedNodeId: action.textId ? null : state.selectedNodeId,
+      }
     case 'layout-mode-changed':
       return markDirty(state, {
         document: touchDocument(
@@ -415,7 +472,11 @@ export function editorReducer(
           action.mode === 'gravity' ? '已启用重力布局' : '已启用基础聚合布局',
       })
     case 'node-selected':
-      return { ...state, selectedNodeId: action.nodeId }
+      return {
+        ...state,
+        selectedNodeId: action.nodeId,
+        editingCustomTextId: null,
+      }
     case 'node-updated': {
       const patchKey = Object.keys(action.patch).sort().join(',')
       return markDirty(
@@ -521,6 +582,41 @@ export function editorReducer(
         statusMessage: '本地图片已移除',
       })
     }
+    case 'profile-avatar-attached': {
+      const assets = { ...state.assets, [action.asset.id]: action.asset }
+      if (action.replacedAssetId) delete assets[action.replacedAssetId]
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            profile: {
+              ...state.document.profile,
+              avatarAssetId: action.asset.id,
+            },
+          },
+          action.at,
+        ),
+        assets,
+        statusMessage: '已载入资料头像 ' + action.asset.fileName,
+      })
+    }
+    case 'profile-avatar-removed': {
+      const assets = { ...state.assets }
+      delete assets[action.assetId]
+      const profile = { ...state.document.profile }
+      delete profile.avatarAssetId
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            profile,
+          },
+          action.at,
+        ),
+        assets,
+        statusMessage: '资料头像已移除',
+      })
+    }
     case 'status-changed':
       return { ...state, statusMessage: action.message }
     case 'editor-restored':
@@ -532,6 +628,7 @@ export function editorReducer(
           action.document.categories[0]?.attributes[0]?.id ??
           action.document.categories[0]?.id ??
           null,
+        editingCustomTextId: null,
         statusMessage: action.message ?? '已恢复本地项目',
         revision: 0,
         persistence: {
@@ -562,6 +659,7 @@ export function editorReducer(
         ...state,
         document: touchDocument(previous.document, action.at),
         selectedNodeId: previous.selectedNodeId,
+        editingCustomTextId: previous.editingCustomTextId,
         assets: previous.assets,
         statusMessage: '已撤销',
         revision: state.revision + 1,
@@ -584,6 +682,7 @@ export function editorReducer(
         ...state,
         document: touchDocument(next.document, action.at),
         selectedNodeId: next.selectedNodeId,
+        editingCustomTextId: next.editingCustomTextId,
         assets: next.assets,
         statusMessage: '已重做',
         revision: state.revision + 1,

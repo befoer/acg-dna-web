@@ -78,6 +78,37 @@ describe('local editor flow', () => {
     expect(screen.getByText('60%')).toBeInTheDocument()
   })
 
+  it('edits the shared APP profile panel with local-only data', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const toolRail = screen.getByRole('navigation', {
+      name: '编辑器工具',
+    })
+    await user.click(within(toolRail).getByRole('button', { name: /模板/ }))
+    await user.click(screen.getByRole('button', { name: /可爱日记/ }))
+    await user.click(within(toolRail).getByRole('button', { name: /资料/ }))
+    expect(screen.getByLabelText('资料面板')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /可爱日记2/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    const nickname = screen.getByRole('textbox', { name: '资料昵称' })
+    await user.clear(nickname)
+    await user.type(nickname, '离线作者')
+    expect(nickname).toHaveValue('离线作者')
+    await user.click(screen.getByRole('button', { name: '性别：女' }))
+    expect(screen.getByRole('button', { name: '性别：女' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await user.click(screen.getByRole('button', { name: '增加资料标签' }))
+    const label = screen.getByRole('textbox', { name: '资料标签 1' })
+    await user.type(label, '宁波')
+    expect(label).toHaveValue('宁波')
+  })
+
   it('edits weight from the compact slider beside each node name', () => {
     render(<App />)
 
@@ -124,8 +155,17 @@ describe('local editor flow', () => {
     await user.selectOptions(fontFamily, 'alimama-fangyuan')
     const roundness = screen.getByRole('slider', { name: '圆度' })
     expect(roundness).toHaveValue('0')
+    expect(document.querySelector('.graph-label-overlay')).toBeInTheDocument()
+    expect(
+      document.querySelector<SVGTextElement>('.graph-label-overlay text')?.style
+        .fontVariationSettings,
+    ).toContain('"BEVL" 1')
     fireEvent.change(roundness, { target: { value: '40' } })
     expect(roundness).toHaveValue('40')
+    expect(
+      document.querySelector<SVGTextElement>('.graph-label-overlay text')?.style
+        .fontVariationSettings,
+    ).toContain('"BEVL" 40.6')
 
     const categoryText = screen.getByRole('button', {
       name: '分类文字',

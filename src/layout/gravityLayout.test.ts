@@ -88,6 +88,21 @@ function assertChildrenContained(nodes: LayoutNode[]): void {
   }
 }
 
+function assertChildrenUseParentSpace(nodes: LayoutNode[]): void {
+  for (const parent of nodes) {
+    if (parent.children.length > 0) {
+      const occupiedRadius = Math.max(
+        ...parent.children.map(
+          (child) =>
+            Math.hypot(child.x - parent.x, child.y - parent.y) + child.radius,
+        ),
+      )
+      expect(occupiedRadius / parent.radius).toBeGreaterThanOrEqual(0.97)
+    }
+    assertChildrenUseParentSpace(parent.children)
+  }
+}
+
 function mapNodes(nodes: LayoutNode[]): Map<string, LayoutNode> {
   const entries = nodes.flatMap((node): Array<[string, LayoutNode]> => [
     [node.id, node],
@@ -123,6 +138,7 @@ describe('deterministic gravity layout', () => {
     assertSiblingsDoNotOverlap(layout.roots)
     assertChildrenContained(layout.roots)
     assertChildrenFormContactCluster(layout.roots)
+    assertChildrenUseParentSpace(layout.roots)
     for (const node of layout.roots) {
       expect(node.x - node.radius).toBeGreaterThanOrEqual(
         horizontalPadding - EPSILON,
@@ -293,6 +309,18 @@ describe('deterministic gravity layout', () => {
     }
 
     expect(largestRelativeChange).toBeGreaterThan(packed.width * 0.08)
+  })
+
+  it('uses vertical room instead of leaving three categories in one row', () => {
+    const layout = createGravityLayout(
+      createStarterGraph('2026-07-15T00:00:00.000Z'),
+    )
+    const left = Math.min(...layout.roots.map((node) => node.x - node.radius))
+    const right = Math.max(...layout.roots.map((node) => node.x + node.radius))
+    const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
+    const bottom = Math.max(...layout.roots.map((node) => node.y + node.radius))
+
+    expect((bottom - top) / (right - left)).toBeGreaterThanOrEqual(0.72)
   })
 
   it('separates exactly overlapping circles in a repeatable direction', () => {

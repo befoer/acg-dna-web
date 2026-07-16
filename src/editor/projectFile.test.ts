@@ -79,6 +79,32 @@ describe('portable project file', () => {
     expect(createProjectFileName('   ')).toBe('未命名属性图.acgdna.json')
   })
 
+  it('embeds a referenced local profile avatar', async () => {
+    const document = createStarterGraph('2026-07-16T07:00:00.000Z')
+    document.profile.avatarAssetId = 'asset-avatar'
+    const blob = new Blob(['avatar'], { type: 'image/png' })
+    const serialized = await serializeProjectFile(
+      {
+        document,
+        savedAt: EXPORTED_AT,
+        assets: [
+          {
+            id: 'asset-avatar',
+            fileName: 'avatar.png',
+            mimeType: 'image/png',
+            byteLength: blob.size,
+            blob,
+          },
+        ],
+      },
+      EXPORTED_AT,
+    )
+    const parsed = parseProjectFileText(serialized)
+
+    expect(parsed.document.profile.avatarAssetId).toBe('asset-avatar')
+    expect(parsed.assets).toHaveLength(1)
+  })
+
   it('keeps only a local font reference and does not embed font bytes', async () => {
     const document = createStarterGraph('2026-07-16T07:00:00.000Z')
     document.canvas.labelSettings = {

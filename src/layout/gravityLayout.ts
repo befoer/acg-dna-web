@@ -259,6 +259,36 @@ function translateSubtree(
   node.children.forEach((child) => translateSubtree(child, deltaX, deltaY))
 }
 
+function scaleSubtreeAround(
+  node: LayoutNode,
+  originX: number,
+  originY: number,
+  factor: number,
+): void {
+  node.x = originX + (node.x - originX) * factor
+  node.y = originY + (node.y - originY) * factor
+  node.radius *= factor
+  node.children.forEach((child) =>
+    scaleSubtreeAround(child, originX, originY, factor),
+  )
+}
+
+function expandChildrenToParent(parent: LayoutNode): void {
+  if (parent.children.length === 0) return
+  const contentRadius = Math.max(
+    ...parent.children.map(
+      (child) =>
+        Math.hypot(child.x - parent.x, child.y - parent.y) + child.radius,
+    ),
+  )
+  if (contentRadius <= EPSILON) return
+  const factor = (parent.radius * 0.985) / contentRadius
+  if (factor <= 1 + EPSILON) return
+  parent.children.forEach((child) =>
+    scaleSubtreeAround(child, parent.x, parent.y, factor),
+  )
+}
+
 function flattenNodes(nodes: LayoutNode[]): LayoutNode[] {
   return nodes.flatMap((node) => [node, ...flattenNodes(node.children)])
 }
@@ -400,6 +430,7 @@ function relaxChildrenInParent(
   depth: number,
 ): void {
   if (parent.children.length === 0) return
+  expandChildrenToParent(parent)
   const bodies: PhysicsBody[] = parent.children.map((node) => ({
     id: node.id,
     x: node.x,
@@ -515,6 +546,44 @@ function relaxDescendants(
   )
 }
 
+function compactTopLevelAgainstGravity(
+  bodies: PhysicsBody[],
+  boundary: RectBoundary,
+  seed: string,
+): void {
+  if (bodies.length <= 1) return
+  const centerX = (boundary.left + boundary.right) / 2
+  const minimumRadius = Math.min(...bodies.map((body) => body.radius))
+  const collisionGap = Math.max(
+    1,
+    Math.min(boundary.right - boundary.left, boundary.bottom - boundary.top) *
+      0.0014,
+  )
+
+  for (let pass = 0; pass < 180; pass += 1) {
+    const progress = (pass + 1) / 180
+    const horizontalStrength = 0.018 + progress * 0.018
+    const verticalStrength = 0.022 + progress * 0.02
+
+    for (const body of bodies) {
+      const lift =
+        stableUnit(seed + '\u0000' + body.id + '\u0000pile-level') *
+        minimumRadius *
+        0.2
+      const targetY = boundary.bottom - body.radius - lift
+      body.x += (centerX - body.x) * horizontalStrength
+      body.y += (targetY - body.y) * verticalStrength
+      body.velocityX = 0
+      body.velocityY = 0
+    }
+
+    for (let collisionPass = 0; collisionPass < 20; collisionPass += 1) {
+      separateCircleCollisions(bodies, collisionGap, seed + '\u0000pile')
+      constrainPhysicsToRectangle(bodies, boundary)
+    }
+  }
+}
+
 function relaxTopLevel(
   nodes: LayoutNode[],
   boundary: RectBoundary,
@@ -592,6 +661,14 @@ function relaxTopLevel(
     ) {
       lastValid = snapshotBodies(bodies)
     }
+  }
+
+  compactTopLevelAgainstGravity(bodies, boundary, documentId)
+  if (
+    bodiesAreInsideRectangle(bodies, boundary) &&
+    bodiesDoNotOverlap(bodies)
+  ) {
+    lastValid = snapshotBodies(bodies)
   }
 
   for (let pass = 0; pass < 160; pass += 1) {

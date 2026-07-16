@@ -6,6 +6,10 @@ export type GraphLayoutMode = 'packing' | 'gravity'
 export type GraphTemplateId = 'custom' | 'cute-pink' | 'endfield'
 export type GraphLabelFontFamily =
   'sans' | 'resource-rounded' | 'alimama-fangyuan' | 'local'
+export type GraphProfileGender = 'none' | 'male' | 'female'
+export type GraphProfileLabelType = 'location' | 'job' | 'mbti' | 'expansion'
+export type GraphProfileTextFontFamily =
+  'sans' | 'resource-rounded' | 'alimama-fangyuan'
 
 export interface GraphContentBounds {
   left: number
@@ -55,6 +59,81 @@ export const DEFAULT_LABEL_SETTINGS: GraphLabelSettings = {
   textColorOverride: null,
 }
 
+export interface GraphProfileSettings {
+  subTemplateId: string | null
+  nickname: string
+  gender: GraphProfileGender
+  labels: GraphProfileLabel[]
+  avatarVisible: boolean
+  nicknameVisible: boolean
+  visibleLabelCount: number
+  textBlockContent: string
+  textBlockVisible: boolean
+  customTexts: GraphProfileCustomText[]
+  avatarAssetId?: string
+}
+
+export interface GraphProfileLabel {
+  id: string
+  type: GraphProfileLabelType
+  content: string
+  maxLength: number
+}
+
+export interface GraphProfileCustomText {
+  id: string
+  text: string
+  x: number
+  y: number
+  fontSize: number
+  color: string
+  rotation: number
+  fontWeight: number
+  fontFamily: GraphProfileTextFontFamily
+  maxWidth: number
+  maxHeight: number
+  visible: boolean
+  strokeWidth: number
+  strokeColor: string
+  roundness: number
+}
+
+export const DEFAULT_PROFILE_SETTINGS: GraphProfileSettings = {
+  subTemplateId: null,
+  nickname: '我的昵称',
+  gender: 'none',
+  labels: [
+    {
+      id: 'profile-label-location',
+      type: 'location',
+      content: '',
+      maxLength: 8,
+    },
+    { id: 'profile-label-job', type: 'job', content: '', maxLength: 8 },
+    { id: 'profile-label-mbti', type: 'mbti', content: '', maxLength: 8 },
+    {
+      id: 'profile-label-expansion',
+      type: 'expansion',
+      content: '',
+      maxLength: 8,
+    },
+  ],
+  avatarVisible: true,
+  nicknameVisible: true,
+  visibleLabelCount: 0,
+  textBlockContent: '',
+  textBlockVisible: true,
+  customTexts: [],
+}
+
+export function createDefaultProfileSettings(): GraphProfileSettings {
+  return {
+    ...DEFAULT_PROFILE_SETTINGS,
+    labels: DEFAULT_PROFILE_SETTINGS.labels.map((label) => ({ ...label })),
+    customTexts: [],
+  }
+}
+
 export interface GraphCanvasSettings {
   width: number
   height: number
@@ -91,6 +170,7 @@ export interface GraphDocument {
   createdAt: string
   updatedAt: string
   canvas: GraphCanvasSettings
+  profile: GraphProfileSettings
   categories: GraphCategory[]
 }
 
@@ -132,6 +212,7 @@ export function createStarterGraph(
       contentBounds: { ...DEFAULT_CONTENT_BOUNDS },
       labelSettings: { ...DEFAULT_LABEL_SETTINGS },
     },
+    profile: createDefaultProfileSettings(),
     categories: [
       {
         id: 'category-animation',
@@ -454,6 +535,256 @@ function readImageAssetId(
   return value
 }
 
+const PROFILE_SUB_TEMPLATE_IDS = new Set([
+  'cute_pink_1',
+  'cute_pink_2',
+  'cute_pink_3',
+  'endfield_1',
+  'endfield_2',
+])
+
+const PROFILE_LABEL_TYPES = new Set<GraphProfileLabelType>([
+  'location',
+  'job',
+  'mbti',
+  'expansion',
+])
+
+function defaultProfileSubTemplateId(
+  templateId: GraphTemplateId,
+): string | null {
+  if (templateId === 'cute-pink') return 'cute_pink_2'
+  if (templateId === 'endfield') return 'endfield_2'
+  return null
+}
+
+function readProfileBoolean(
+  profile: UnknownRecord,
+  key: string,
+  fallback: boolean,
+  path: string,
+): boolean {
+  const value = profile[key]
+  if (value === undefined) return fallback
+  if (typeof value !== 'boolean') {
+    throw new GraphValidationError(path + '.' + key + ' 必须是布尔值')
+  }
+  return value
+}
+
+function readProfileColor(
+  record: UnknownRecord,
+  key: string,
+  path: string,
+  fallback: string,
+): string {
+  const value = record[key] ?? fallback
+  if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) {
+    throw new GraphValidationError(path + '.' + key + ' 必须是 #RRGGBB 颜色')
+  }
+  return value
+}
+
+function readProfileTextFontFamily(
+  record: UnknownRecord,
+  path: string,
+): GraphProfileTextFontFamily {
+  const value = record.fontFamily ?? 'sans'
+  if (value === 'default' || value === 'source_han_sans_vf') return 'sans'
+  if (value === 'source_han_rounded') return 'resource-rounded'
+  if (value === 'alimama_fangyuanti') return 'alimama-fangyuan'
+  if (
+    value !== 'sans' &&
+    value !== 'resource-rounded' &&
+    value !== 'alimama-fangyuan'
+  ) {
+    throw new GraphValidationError(path + '.fontFamily 不是支持的资料文字字体')
+  }
+  return value
+}
+
+function readProfileSettings(
+  record: UnknownRecord,
+  templateId: GraphTemplateId,
+): GraphProfileSettings {
+  const defaults = createDefaultProfileSettings()
+  if (record.profile === undefined) return defaults
+
+  const path = 'document.profile'
+  const profile = readRecord(record.profile, path)
+  const legacyVisible = readProfileBoolean(profile, 'visible', false, path)
+  const subTemplateValue = profile.subTemplateId
+  let subTemplateId: string | null
+  if (subTemplateValue === undefined) {
+    subTemplateId = legacyVisible
+      ? defaultProfileSubTemplateId(templateId)
+      : defaults.subTemplateId
+  } else if (subTemplateValue === null || subTemplateValue === '') {
+    subTemplateId = null
+  } else if (
+    typeof subTemplateValue === 'string' &&
+    PROFILE_SUB_TEMPLATE_IDS.has(subTemplateValue)
+  ) {
+    subTemplateId = subTemplateValue
+  } else {
+    throw new GraphValidationError(path + '.subTemplateId 不是支持的资料模板')
+  }
+
+  const nicknameValue = profile.nickname ?? defaults.nickname
+  if (typeof nicknameValue !== 'string' || nicknameValue.length > 32) {
+    throw new GraphValidationError(
+      path + '.nickname 必须是不超过 32 字符的字符串',
+    )
+  }
+  const nickname =
+    nicknameValue.trim().slice(0, 12) || DEFAULT_PROFILE_SETTINGS.nickname
+
+  const genderValue = profile.gender ?? defaults.gender
+  const normalizedGender =
+    genderValue === 'MALE'
+      ? 'male'
+      : genderValue === 'FEMALE'
+        ? 'female'
+        : genderValue === 'NONE'
+          ? 'none'
+          : genderValue
+  if (
+    normalizedGender !== 'none' &&
+    normalizedGender !== 'male' &&
+    normalizedGender !== 'female'
+  ) {
+    throw new GraphValidationError(path + '.gender 不是支持的性别选项')
+  }
+
+  let labels = defaults.labels
+  if (profile.labels !== undefined) {
+    if (!Array.isArray(profile.labels) || profile.labels.length > 4) {
+      throw new GraphValidationError(path + '.labels 必须是不超过 4 项的数组')
+    }
+    const parsedLabels = profile.labels.map(
+      (value, index): GraphProfileLabel => {
+        const labelPath = path + '.labels[' + index + ']'
+        const label = readRecord(value, labelPath)
+        const typeValue = label.type
+        const type =
+          typeof typeValue === 'string'
+            ? (typeValue.toLowerCase() as GraphProfileLabelType)
+            : typeValue
+        if (!PROFILE_LABEL_TYPES.has(type as GraphProfileLabelType)) {
+          throw new GraphValidationError(labelPath + '.type 不是支持的标签类型')
+        }
+        const content = label.content ?? ''
+        if (typeof content !== 'string' || content.length > 8) {
+          throw new GraphValidationError(labelPath + '.content 不能超过 8 字符')
+        }
+        return {
+          id: readString(label, 'id', labelPath),
+          type: type as GraphProfileLabelType,
+          content,
+          maxLength:
+            label.maxLength === undefined
+              ? 8
+              : readNumber(label, 'maxLength', labelPath, 1, 8),
+        }
+      },
+    )
+    labels = defaults.labels.map(
+      (fallback) =>
+        parsedLabels.find((label) => label.type === fallback.type) ?? fallback,
+    )
+  }
+
+  const visibleLabelCount =
+    profile.visibleLabelCount === undefined
+      ? Math.min(4, labels.filter((label) => label.content.trim()).length)
+      : readNumber(profile, 'visibleLabelCount', path, 0, 4)
+  const textBlockContent = profile.textBlockContent ?? ''
+  if (typeof textBlockContent !== 'string' || textBlockContent.length > 80) {
+    throw new GraphValidationError(path + '.textBlockContent 不能超过 80 字符')
+  }
+
+  let customTexts: GraphProfileCustomText[] = []
+  if (profile.customTexts !== undefined) {
+    if (
+      !Array.isArray(profile.customTexts) ||
+      profile.customTexts.length > 32
+    ) {
+      throw new GraphValidationError(
+        path + '.customTexts 必须是不超过 32 项的数组',
+      )
+    }
+    customTexts = profile.customTexts.map(
+      (value, index): GraphProfileCustomText => {
+        const textPath = path + '.customTexts[' + index + ']'
+        const customText = readRecord(value, textPath)
+        const text = customText.text ?? ''
+        if (typeof text !== 'string' || text.length > 100) {
+          throw new GraphValidationError(textPath + '.text 不能超过 100 字符')
+        }
+        return {
+          id: readString(customText, 'id', textPath),
+          text,
+          x: readNumber(customText, 'x', textPath, 0, 1),
+          y: readNumber(customText, 'y', textPath, 0, 1),
+          fontSize: readNumber(customText, 'fontSize', textPath, 10, 100),
+          color: readProfileColor(customText, 'color', textPath, '#333333'),
+          rotation: readNumber(customText, 'rotation', textPath, -180, 180),
+          fontWeight: readNumber(customText, 'fontWeight', textPath, 100, 900),
+          fontFamily: readProfileTextFontFamily(customText, textPath),
+          maxWidth: readNumber(customText, 'maxWidth', textPath, 0.1, 1),
+          maxHeight: readNumber(customText, 'maxHeight', textPath, 0.1, 1),
+          visible: readProfileBoolean(customText, 'visible', true, textPath),
+          strokeWidth: readNumber(customText, 'strokeWidth', textPath, 0, 10),
+          strokeColor: readProfileColor(
+            customText,
+            'strokeColor',
+            textPath,
+            '#FFFFFF',
+          ),
+          roundness: readNumber(customText, 'roundness', textPath, 0, 1),
+        }
+      },
+    )
+  }
+
+  const avatarValue = profile.avatarAssetId
+  if (
+    avatarValue !== undefined &&
+    (typeof avatarValue !== 'string' || !avatarValue.trim())
+  ) {
+    throw new GraphValidationError(path + '.avatarAssetId 必须是非空字符串')
+  }
+
+  return {
+    subTemplateId,
+    nickname,
+    gender: normalizedGender,
+    labels,
+    avatarVisible: readProfileBoolean(
+      profile,
+      'avatarVisible',
+      defaults.avatarVisible,
+      path,
+    ),
+    nicknameVisible: readProfileBoolean(
+      profile,
+      'nicknameVisible',
+      defaults.nicknameVisible,
+      path,
+    ),
+    visibleLabelCount,
+    textBlockContent,
+    textBlockVisible: readProfileBoolean(
+      profile,
+      'textBlockVisible',
+      defaults.textBlockVisible,
+      path,
+    ),
+    customTexts,
+    ...(typeof avatarValue === 'string' ? { avatarAssetId: avatarValue } : {}),
+  }
+}
+
 function readLayoutMode(record: UnknownRecord): GraphLayoutMode {
   const value = record.layoutMode
   if (value === undefined) {
@@ -740,6 +1071,7 @@ export function parseGraphDocument(input: unknown): GraphDocument {
 
   const id = readString(record, 'id', 'document')
   registerId(id, 'document')
+  const templateId = readTemplateId(canvasRecord)
 
   return {
     schemaVersion: GRAPH_SCHEMA_VERSION,
@@ -752,10 +1084,11 @@ export function parseGraphDocument(input: unknown): GraphDocument {
       height: readNumber(canvasRecord, 'height', 'document.canvas', 320, 4096),
       backgroundColor,
       layoutMode: readLayoutMode(canvasRecord),
-      templateId: readTemplateId(canvasRecord),
+      templateId,
       contentBounds: readContentBounds(canvasRecord),
       labelSettings: readLabelSettings(canvasRecord),
     },
+    profile: readProfileSettings(record, templateId),
     categories,
   }
 }

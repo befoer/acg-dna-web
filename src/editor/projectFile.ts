@@ -61,6 +61,7 @@ function collectReferencedAssetIds(document: GraphDocument): Set<string> {
   const add = (imageAssetId: string | undefined) => {
     if (imageAssetId) ids.add(imageAssetId)
   }
+  add(document.profile.avatarAssetId)
   document.categories.forEach((category) => {
     add(category.imageAssetId)
     category.attributes.forEach((attribute) => {

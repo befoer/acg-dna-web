@@ -13,6 +13,8 @@ export interface EditorContextValue {
   dispatch: Dispatch<EditorAction>
   attachImage: (nodeId: string, file: File) => Promise<void>
   removeImage: (nodeId: string) => void
+  attachProfileAvatar: (file: File) => Promise<void>
+  removeProfileAvatar: () => void
   removeNode: (nodeId: string) => void
   projects: ProjectSummary[]
   activeProjectId: string | null

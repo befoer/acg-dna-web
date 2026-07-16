@@ -3,6 +3,7 @@ import { getGraphTemplate } from '../domain/templates'
 import type { LocalImageAsset } from '../editor/assets'
 import {
   ensureGraphFontLoaded,
+  ensureProfileFontsLoaded,
   getGraphFontCssFamily,
 } from '../fonts/fontManager'
 import {
@@ -12,6 +13,13 @@ import {
 } from '../layout/basicLayout'
 import { createGravityLayout } from '../layout/gravityLayout'
 import { loadTemplateBackground } from './templateBackground'
+import { drawAlimamaLabelsToCanvas } from './graphLabelOverlay'
+import {
+  loadProfileTemplateAssets,
+  type ProfileTemplateAssetMap,
+} from './profileTemplateAssets'
+import { drawProfileCustomTexts, drawProfileTemplate } from './profileRenderer'
+import { drawAlimamaProfileTextsToCanvas } from './profileTextOverlay'
 
 export type LocalImageAssetMap = Readonly<Record<string, LocalImageAsset>>
 
@@ -20,6 +28,10 @@ export interface RenderGraphOptions {
   layout?: BasicLayoutResult
   templateBackground?: HTMLImageElement | null
   showContentBounds?: boolean
+  drawNodeText?: boolean
+  profileTemplateAssets?: ProfileTemplateAssetMap
+  selectedCustomTextId?: string | null
+  drawProfileTemplate?: boolean
 }
 
 function fitLayoutToBounds(
@@ -233,6 +245,7 @@ function drawNode(
   selectedNodeId: string | null | undefined,
   settings: GraphLabelSettings,
   canvasWidth: number,
+  drawNodeText: boolean,
 ): void {
   const asset =
     settings.showImages && node.imageAssetId
@@ -293,13 +306,23 @@ function drawNode(
   context.restore()
 
   node.children.forEach((child) =>
-    drawNode(context, child, assets, selectedNodeId, settings, canvasWidth),
+    drawNode(
+      context,
+      child,
+      assets,
+      selectedNodeId,
+      settings,
+      canvasWidth,
+      drawNodeText,
+    ),
   )
   const showText =
     node.kind === 'category'
       ? settings.showCategoryText
       : settings.showLabelText
-  if (showText) drawNodeLabel(context, node, Boolean(asset), settings)
+  if (showText && drawNodeText) {
+    drawNodeLabel(context, node, Boolean(asset), settings)
+  }
 
   if (node.id === selectedNodeId) {
     context.save()
@@ -466,10 +489,20 @@ export function renderGraph(
         options.selectedNodeId,
         document.canvas.labelSettings,
         width,
+        options.drawNodeText ?? true,
       ),
     )
   }
   context.restore()
+  drawProfileCustomTexts(context, document, options.selectedCustomTextId)
+  if (options.drawProfileTemplate ?? true) {
+    drawProfileTemplate(
+      context,
+      document,
+      assets,
+      options.profileTemplateAssets ?? {},
+    )
+  }
   if (options.showContentBounds) drawContentBounds(context, document)
   if (template.showCanvasText) drawFooter(context, document)
   context.restore()
@@ -496,11 +529,32 @@ export async function downloadGraphPng(
     throw new Error('当前浏览器不支持 Canvas 2D')
   }
 
-  await ensureGraphFontLoaded(document.canvas.labelSettings)
-  const templateBackground = await loadTemplateBackground(
-    document.canvas.templateId,
-  )
-  renderGraph(context, document, assets, { templateBackground })
+  await Promise.all([
+    ensureGraphFontLoaded(document.canvas.labelSettings),
+    ensureProfileFontsLoaded(document.profile),
+  ])
+  const [templateBackground, profileTemplateAssets] = await Promise.all([
+    loadTemplateBackground(document.canvas.templateId),
+    loadProfileTemplateAssets(
+      document.profile.subTemplateId,
+      document.profile.gender,
+    ),
+  ])
+  const usesAlimama =
+    document.canvas.labelSettings.fontFamily === 'alimama-fangyuan'
+  const layout = createGraphLayout(document)
+  renderGraph(context, document, assets, {
+    templateBackground,
+    profileTemplateAssets,
+    layout,
+    drawNodeText: !usesAlimama,
+    drawProfileTemplate: false,
+  })
+  if (usesAlimama) {
+    await drawAlimamaLabelsToCanvas(context, document, layout, assets)
+  }
+  await drawAlimamaProfileTextsToCanvas(context, document)
+  drawProfileTemplate(context, document, assets, profileTemplateAssets)
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((value) => {
       if (value) resolve(value)

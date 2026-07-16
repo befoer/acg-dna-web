@@ -50,6 +50,8 @@ interface RestoredProjectAssets {
   failedCount: number
 }
 
+const PROFILE_AVATAR_REQUEST_KEY = 'profile-avatar'
+
 async function restoreProjectAssets(
   snapshot: PersistedEditorSnapshot,
 ): Promise<RestoredProjectAssets> {
@@ -813,6 +815,62 @@ export function EditorProvider({
     })
   }, [])
 
+  const attachProfileAvatar = useCallback(async (file: File) => {
+    if (projectActionPendingRef.current) {
+      dispatch({
+        type: 'status-changed',
+        message: '项目操作完成后再选择头像',
+      })
+      return
+    }
+    const requestToken = Symbol(PROFILE_AVATAR_REQUEST_KEY)
+    imageRequestTokensRef.current.set(PROFILE_AVATAR_REQUEST_KEY, requestToken)
+    dispatch({ type: 'status-changed', message: '正在读取本地头像…' })
+    try {
+      const asset = await loadLocalImageAsset(file)
+      const currentToken = imageRequestTokensRef.current.get(
+        PROFILE_AVATAR_REQUEST_KEY,
+      )
+      if (!mountedRef.current || currentToken !== requestToken) {
+        revokeLocalImageAsset(asset)
+        return
+      }
+      imageRequestTokensRef.current.delete(PROFILE_AVATAR_REQUEST_KEY)
+      const previousAssetId = stateRef.current.document.profile.avatarAssetId
+      knownAssetsRef.current.set(asset.id, asset)
+      dispatch({
+        type: 'profile-avatar-attached',
+        asset,
+        ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
+        at: new Date().toISOString(),
+      })
+    } catch (error) {
+      if (
+        imageRequestTokensRef.current.get(PROFILE_AVATAR_REQUEST_KEY) !==
+        requestToken
+      ) {
+        return
+      }
+      imageRequestTokensRef.current.delete(PROFILE_AVATAR_REQUEST_KEY)
+      if (!mountedRef.current) return
+      dispatch({
+        type: 'status-changed',
+        message: error instanceof Error ? error.message : '头像读取失败',
+      })
+    }
+  }, [])
+
+  const removeProfileAvatar = useCallback(() => {
+    imageRequestTokensRef.current.delete(PROFILE_AVATAR_REQUEST_KEY)
+    const assetId = stateRef.current.document.profile.avatarAssetId
+    if (!assetId) return
+    dispatch({
+      type: 'profile-avatar-removed',
+      assetId,
+      at: new Date().toISOString(),
+    })
+  }, [])
+
   const removeNode = useCallback((nodeId: string) => {
     const currentState = stateRef.current
     const removedMatch = findGraphNode(currentState.document, nodeId)
@@ -843,7 +901,9 @@ export function EditorProvider({
       state,
       dispatch,
       attachImage,
+      attachProfileAvatar,
       removeImage,
+      removeProfileAvatar,
       removeNode,
       projects,
       activeProjectId,
@@ -858,6 +918,7 @@ export function EditorProvider({
     [
       activeProjectId,
       attachImage,
+      attachProfileAvatar,
       createProject,
       deleteProject,
       duplicateProject,
@@ -866,6 +927,7 @@ export function EditorProvider({
       projectActionPending,
       projects,
       removeImage,
+      removeProfileAvatar,
       removeNode,
       state,
       switchProject,

@@ -1,14 +1,30 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 import { createGraphLayout, renderGraph } from '../canvas/renderGraph'
+import {
+  createProfileCustomTextRegions,
+  drawProfileTemplate,
+  hitTestProfileCustomText,
+  type ProfileCustomTextRegion,
+} from '../canvas/profileRenderer'
+import {
+  loadProfileTemplateAssets,
+  type ProfileTemplateAssetMap,
+} from '../canvas/profileTemplateAssets'
 import { loadTemplateBackground } from '../canvas/templateBackground'
 import { useEditor } from '../editor/editorContext'
-import { ensureGraphFontLoaded } from '../fonts/fontManager'
+import {
+  ensureGraphFontLoaded,
+  ensureProfileFontsLoaded,
+} from '../fonts/fontManager'
 import type { BasicLayoutResult } from '../layout/basicLayout'
 import { findLayoutNodeAtPoint } from './canvasHitTest'
 import { computeFitScale } from './canvasScale'
+import { GraphLabelOverlay } from './GraphLabelOverlay'
+import { ProfileTextOverlay } from './ProfileTextOverlay'
 
 const CANVAS_GUTTER = 18
+const EMPTY_PROFILE_TEMPLATE_ASSETS: ProfileTemplateAssetMap = {}
 
 interface GraphCanvasProps {
   zoom: number
@@ -22,11 +38,24 @@ export function GraphCanvas({
   const { state, dispatch } = useEditor()
   const frameRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const profileCanvasRef = useRef<HTMLCanvasElement>(null)
   const layoutRef = useRef<BasicLayoutResult | null>(null)
+  const customTextRegionsRef = useRef<ProfileCustomTextRegion[]>([])
+  const customTextDragRef = useRef<{
+    id: string
+    pointerX: number
+    pointerY: number
+    startX: number
+    startY: number
+  } | null>(null)
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 })
   const [loadedTemplate, setLoadedTemplate] = useState<{
     templateId: string
     image: HTMLImageElement | null
+  } | null>(null)
+  const [loadedProfileTemplate, setLoadedProfileTemplate] = useState<{
+    key: string
+    assets: ProfileTemplateAssetMap
   } | null>(null)
   const [fontRevision, setFontRevision] = useState(0)
   const {
@@ -40,6 +69,7 @@ export function GraphCanvas({
       labelSettings,
     },
     id,
+    profile,
     schemaVersion,
   } = state.document
   const layoutDocument = useMemo(
@@ -58,6 +88,7 @@ export function GraphCanvas({
         contentBounds,
         labelSettings,
       },
+      profile,
       categories,
     }),
     [
@@ -67,6 +98,7 @@ export function GraphCanvas({
       id,
       layoutMode,
       labelSettings,
+      profile,
       schemaVersion,
       templateId,
       width,
@@ -78,6 +110,17 @@ export function GraphCanvas({
   )
   const templateBackground =
     loadedTemplate?.templateId === templateId ? loadedTemplate.image : null
+  const profileTemplateKey =
+    (profile.subTemplateId ?? '') + ':' + profile.gender
+  const profileTemplateAssets =
+    loadedProfileTemplate?.key === profileTemplateKey
+      ? loadedProfileTemplate.assets
+      : EMPTY_PROFILE_TEMPLATE_ASSETS
+  const usesAlimama = labelSettings.fontFamily === 'alimama-fangyuan'
+  const usesProfileAlimama = profile.customTexts.some(
+    (text) => text.visible && text.fontFamily === 'alimama-fangyuan',
+  )
+  const usesVariableTextOverlay = usesAlimama || usesProfileAlimama
 
   useEffect(() => {
     let cancelled = false
@@ -102,7 +145,24 @@ export function GraphCanvas({
 
   useEffect(() => {
     let cancelled = false
-    void ensureGraphFontLoaded(state.document.canvas.labelSettings).then(
+    void loadProfileTemplateAssets(profile.subTemplateId, profile.gender).then(
+      (assets) => {
+        if (!cancelled) {
+          setLoadedProfileTemplate({ key: profileTemplateKey, assets })
+        }
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [profile.gender, profile.subTemplateId, profileTemplateKey])
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([
+      ensureGraphFontLoaded(state.document.canvas.labelSettings),
+      ensureProfileFontsLoaded(state.document.profile),
+    ]).then(
       () => {
         if (!cancelled) setFontRevision((current) => current + 1)
       },
@@ -121,11 +181,13 @@ export function GraphCanvas({
     return () => {
       cancelled = true
     }
-  }, [dispatch, state.document.canvas.labelSettings])
+  }, [dispatch, state.document.canvas.labelSettings, state.document.profile])
 
   useEffect(() => {
     const canvas = canvasRef.current
+    const profileCanvas = profileCanvasRef.current
     const context = canvas?.getContext('2d')
+    const profileContext = profileCanvas?.getContext('2d')
     if (!canvas || !context) return
     if (fontRevision < 0) return
 
@@ -133,17 +195,40 @@ export function GraphCanvas({
       selectedNodeId: state.selectedNodeId,
       layout,
       templateBackground,
+      profileTemplateAssets,
+      selectedCustomTextId: state.editingCustomTextId,
       showContentBounds,
+      drawNodeText: !usesAlimama,
+      drawProfileTemplate: !usesVariableTextOverlay,
     })
+    if (profileCanvas && profileContext) {
+      profileContext.clearRect(0, 0, profileCanvas.width, profileCanvas.height)
+      if (usesVariableTextOverlay) {
+        drawProfileTemplate(
+          profileContext,
+          state.document,
+          state.assets,
+          profileTemplateAssets,
+        )
+      }
+    }
     layoutRef.current = layout
+    customTextRegionsRef.current = createProfileCustomTextRegions(
+      context,
+      state.document,
+    )
   }, [
     layout,
     fontRevision,
     showContentBounds,
     state.assets,
     state.document,
+    state.editingCustomTextId,
     state.selectedNodeId,
+    profileTemplateAssets,
     templateBackground,
+    usesAlimama,
+    usesVariableTextOverlay,
   ])
 
   useEffect(() => {
@@ -199,28 +284,61 @@ export function GraphCanvas({
     frame.scrollTop = Math.max(0, (frame.scrollHeight - frame.clientHeight) / 2)
   }, [displayHeight, displayWidth])
 
+  const canvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const bounds = canvas.getBoundingClientRect()
+    if (bounds.width <= 0 || bounds.height <= 0) return null
+    return {
+      x: ((event.clientX - bounds.left) / bounds.width) * canvas.width,
+      y: ((event.clientY - bounds.top) / bounds.height) * canvas.height,
+      bounds,
+    }
+  }
+
   const selectAtPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     const currentLayout = layoutRef.current
-    if (!canvas || !currentLayout) return
-    const bounds = canvas.getBoundingClientRect()
-    if (bounds.width <= 0 || bounds.height <= 0) return
-    const pointerX =
-      ((event.clientX - bounds.left) / bounds.width) * canvas.width
-    const pointerY =
-      ((event.clientY - bounds.top) / bounds.height) * canvas.height
+    const point = canvasPoint(event)
+    if (!canvas || !currentLayout || !point) return
+    const customTextId = hitTestProfileCustomText(
+      customTextRegionsRef.current,
+      point.x,
+      point.y,
+    )
+    if (customTextId) {
+      const customText = state.document.profile.customTexts.find(
+        (text) => text.id === customTextId,
+      )
+      if (!customText) return
+      dispatch({ type: 'custom-text-selected', textId: customTextId })
+      customTextDragRef.current = {
+        id: customTextId,
+        pointerX: point.x,
+        pointerY: point.y,
+        startX: customText.x,
+        startY: customText.y,
+      }
+      canvas.setPointerCapture(event.pointerId)
+      event.preventDefault()
+      return
+    }
     const content = state.document.canvas.contentBounds
     const centerX =
       ((content.left + content.right) / 2) * state.document.canvas.width
     const centerY =
       ((content.top + content.bottom) / 2) * state.document.canvas.height
     const angle = (-content.rotation * Math.PI) / 180
-    const deltaX = pointerX - centerX
-    const deltaY = pointerY - centerY
+    const deltaX = point.x - centerX
+    const deltaY = point.y - centerY
     const x = centerX + deltaX * Math.cos(angle) - deltaY * Math.sin(angle)
     const y = centerY + deltaX * Math.sin(angle) + deltaY * Math.cos(angle)
     const minimumHitRadius =
-      22 * Math.max(canvas.width / bounds.width, canvas.height / bounds.height)
+      22 *
+      Math.max(
+        canvas.width / point.bounds.width,
+        canvas.height / point.bounds.height,
+      )
     const node = findLayoutNodeAtPoint(
       currentLayout.flatNodes,
       x,
@@ -228,6 +346,47 @@ export function GraphCanvas({
       minimumHitRadius,
     )
     dispatch({ type: 'node-selected', nodeId: node?.id ?? null })
+  }
+
+  const dragCustomText = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = customTextDragRef.current
+    const point = canvasPoint(event)
+    if (!drag || !point) return
+    const nextX = Math.max(
+      0,
+      Math.min(
+        1,
+        drag.startX + (point.x - drag.pointerX) / state.document.canvas.width,
+      ),
+    )
+    const nextY = Math.max(
+      0,
+      Math.min(
+        1,
+        drag.startY + (point.y - drag.pointerY) / state.document.canvas.height,
+      ),
+    )
+    dispatch({
+      type: 'profile-settings-changed',
+      patch: {
+        customTexts: state.document.profile.customTexts.map((text) =>
+          text.id === drag.id ? { ...text, x: nextX, y: nextY } : text,
+        ),
+      },
+      group: 'custom-text-position:' + drag.id,
+      at: new Date().toISOString(),
+    })
+    event.preventDefault()
+  }
+
+  const finishCustomTextDrag = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
+    if (!customTextDragRef.current) return
+    customTextDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
   }
 
   return (
@@ -242,7 +401,29 @@ export function GraphCanvas({
           role="img"
           aria-label={`${state.document.name} 的属性图预览；点击气泡可选择节点`}
           onPointerDown={selectAtPointer}
+          onPointerMove={dragCustomText}
+          onPointerUp={finishCustomTextDrag}
+          onPointerCancel={finishCustomTextDrag}
         />
+        <canvas
+          ref={profileCanvasRef}
+          className={'graph-profile-overlay'}
+          style={canvasStyle}
+          width={state.document.canvas.width}
+          height={state.document.canvas.height}
+          aria-hidden={true}
+        />
+        {usesAlimama ? (
+          <GraphLabelOverlay
+            document={state.document}
+            layout={layout}
+            assets={state.assets}
+            style={canvasStyle}
+          />
+        ) : null}
+        {usesProfileAlimama ? (
+          <ProfileTextOverlay document={state.document} style={canvasStyle} />
+        ) : null}
       </div>
     </div>
   )

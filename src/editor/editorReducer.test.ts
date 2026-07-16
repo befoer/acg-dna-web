@@ -72,6 +72,41 @@ describe('editor reducer', () => {
     expect(state.document.canvas.layoutMode).toBe('gravity')
   })
 
+  it('updates APP profile fields and manages its local avatar asset', () => {
+    const state = createInitialEditorState(createStarterGraph(NOW))
+    const asset = createTestAsset('asset-profile')
+    const updated = editorReducer(state, {
+      type: 'profile-settings-changed',
+      patch: {
+        subTemplateId: 'cute_pink_1',
+        nickname: '本地作者',
+        gender: 'female',
+      },
+      at: NOW,
+    })
+    const attached = editorReducer(updated, {
+      type: 'profile-avatar-attached',
+      asset,
+      at: NOW,
+    })
+
+    expect(attached.document.profile).toMatchObject({
+      subTemplateId: 'cute_pink_1',
+      nickname: '本地作者',
+      gender: 'female',
+      avatarAssetId: asset.id,
+    })
+    expect(attached.assets[asset.id]).toBe(asset)
+
+    const removed = editorReducer(attached, {
+      type: 'profile-avatar-removed',
+      assetId: asset.id,
+      at: NOW,
+    })
+    expect(removed.document.profile.avatarAssetId).toBeUndefined()
+    expect(removed.assets[asset.id]).toBeUndefined()
+  })
+
   it('applies a local template without replacing graph data or assets', () => {
     const state = createInitialEditorState(createStarterGraph(NOW))
     const asset = createTestAsset('asset-template')
@@ -95,6 +130,7 @@ describe('editor reducer', () => {
         rotation: -2,
       },
     })
+    expect(applied.document.profile.subTemplateId).toBe('cute_pink_2')
     expect(applied.document.categories).toBe(state.document.categories)
     expect(applied.assets).toBe(state.assets)
     expect(applied.history.past).toHaveLength(1)

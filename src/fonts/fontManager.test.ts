@@ -15,7 +15,6 @@ interface FontFaceCall {
 
 let fontFaceCalls: FontFaceCall[] = []
 let addedFaces: FontFace[] = []
-let deletedFaces: FontFace[] = []
 
 class MockFontFace {
   family: string
@@ -52,7 +51,6 @@ beforeEach(() => {
   vi.resetModules()
   fontFaceCalls = []
   addedFaces = []
-  deletedFaces = []
   globalThis.indexedDB = new IDBFactory()
   Object.defineProperty(globalThis, 'FontFace', {
     configurable: true,
@@ -64,10 +62,6 @@ beforeEach(() => {
     value: {
       add: (face: FontFace) => {
         addedFaces.push(face)
-      },
-      delete: (face: FontFace) => {
-        deletedFaces.push(face)
-        return true
       },
     },
   })
@@ -152,9 +146,12 @@ describe('graph font manager', () => {
     expect(addedFaces).toHaveLength(1)
   })
 
-  it('reloads the Alimama face when its roundness axis changes', async () => {
-    const { ensureGraphFontLoaded, getGraphFontCssFamily } =
-      await import('./fontManager')
+  it('loads one Alimama base face and resolves CSS variation axes', async () => {
+    const {
+      ensureGraphFontLoaded,
+      getGraphFontCssFamily,
+      resolveAlimamaVariation,
+    } = await import('./fontManager')
     const settings = {
       ...DEFAULT_LABEL_SETTINGS,
       fontFamily: 'alimama-fangyuan' as const,
@@ -166,41 +163,26 @@ describe('graph font manager', () => {
     await ensureGraphFontLoaded(settings)
     await ensureGraphFontLoaded({ ...settings, fontRoundness: 80 })
 
-    expect(fontFaceCalls).toHaveLength(2)
-    expect(fontFaceCalls[0]?.family).toContain('w700-r40')
-    expect(fontFaceCalls[0]?.descriptors?.variationSettings).toBe(
-      '"wght" 700, "BEVL" 40.6',
-    )
-    expect(fontFaceCalls[1]?.family).toContain('w700-r80')
-    expect(fontFaceCalls[1]?.descriptors?.variationSettings).toBe(
-      '"wght" 700, "BEVL" 80.2',
-    )
-    expect(getGraphFontCssFamily(settings)).toContain('w700-r40')
-    expect(getGraphFontCssFamily({ ...settings, fontRoundness: 80 })).toContain(
-      'w700-r80',
-    )
-    expect(addedFaces).toHaveLength(2)
-    expect(deletedFaces).toHaveLength(0)
-  })
-
-  it('keeps at most 24 Alimama font instances like the app cache', async () => {
-    const { ensureGraphFontLoaded } = await import('./fontManager')
-    const base = {
-      ...DEFAULT_LABEL_SETTINGS,
-      fontFamily: 'alimama-fangyuan' as const,
-      fontWeight: 700,
-    }
-
-    for (let roundness = 0; roundness <= 100; roundness += 5) {
-      await ensureGraphFontLoaded({ ...base, fontRoundness: roundness })
-    }
-    for (const fontWeight of [200, 300, 400, 500]) {
-      await ensureGraphFontLoaded({ ...base, fontWeight, fontRoundness: 0 })
-    }
-
-    expect(fontFaceCalls).toHaveLength(25)
-    expect(addedFaces).toHaveLength(25)
-    expect(deletedFaces).toHaveLength(1)
+    expect(fontFaceCalls).toHaveLength(1)
+    expect(fontFaceCalls[0]).toMatchObject({
+      family: 'ACGDNA Alimama FangYuan',
+      descriptors: { display: 'swap', weight: '200 700' },
+    })
+    expect(fontFaceCalls[0]?.descriptors?.variationSettings).toBeUndefined()
+    expect(getGraphFontCssFamily(settings)).toContain('ACGDNA Alimama FangYuan')
+    expect(resolveAlimamaVariation(700, 42)).toEqual({
+      weight: 700,
+      roundness: 40,
+      bevl: 40.6,
+      settings: '"wght" 700, "BEVL" 40.6',
+    })
+    expect(resolveAlimamaVariation(900, -2)).toEqual({
+      weight: 700,
+      roundness: 0,
+      bevl: 1,
+      settings: '"wght" 700, "BEVL" 1',
+    })
+    expect(addedFaces).toHaveLength(1)
   })
 
   it('restores a local font from IndexedDB in a new module session', async () => {

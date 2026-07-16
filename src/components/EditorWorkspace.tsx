@@ -6,9 +6,10 @@ import { ContentBoundsPanel } from './ContentBoundsPanel'
 import { EditorPanel } from './EditorPanel'
 import { GraphCanvas } from './GraphCanvas'
 import { ProjectManager } from './ProjectManager'
+import { ProfilePanel } from './ProfilePanel'
 import { TemplatePanel } from './TemplatePanel'
 
-type EditorPanelId = 'data' | 'template' | 'bounds'
+type EditorPanelId = 'data' | 'template' | 'profile' | 'bounds'
 
 const EDITOR_PANELS: ReadonlyArray<{
   id: EditorPanelId
@@ -17,6 +18,7 @@ const EDITOR_PANELS: ReadonlyArray<{
 }> = [
   { id: 'data', label: '数据', icon: '⌘' },
   { id: 'template', label: '模板', icon: '▦' },
+  { id: 'profile', label: '资料', icon: '◉' },
   { id: 'bounds', label: '范围', icon: '⌗' },
 ]
 
@@ -109,6 +111,8 @@ export function EditorWorkspace() {
   const panelContent =
     activePanel === 'template' ? (
       <TemplatePanel />
+    ) : activePanel === 'profile' ? (
+      <ProfilePanel />
     ) : activePanel === 'bounds' ? (
       <ContentBoundsPanel />
     ) : (
