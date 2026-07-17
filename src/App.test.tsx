@@ -257,31 +257,11 @@ describe('local editor flow', () => {
         name: '资源圆体 Bold',
       }),
     ).toBeInTheDocument()
-    expect(
-      within(fontFamily).getByRole('option', {
-        name: '阿里妈妈方圆体',
-      }),
-    ).toBeInTheDocument()
     await user.selectOptions(fontFamily, 'resource-rounded')
     expect(screen.getByText(/固定 Bold 字重/)).toBeInTheDocument()
     expect(
       screen.queryByRole('slider', { name: '字重' }),
     ).not.toBeInTheDocument()
-    await user.selectOptions(fontFamily, 'alimama-fangyuan')
-    const roundness = screen.getByRole('slider', { name: '圆度' })
-    expect(roundness).toHaveValue('0')
-    expect(document.querySelector('.graph-label-overlay')).toBeInTheDocument()
-    expect(
-      document.querySelector<SVGTextElement>('.graph-label-overlay text')?.style
-        .fontVariationSettings,
-    ).toContain('"BEVL" 1')
-    fireEvent.change(roundness, { target: { value: '40' } })
-    expect(roundness).toHaveValue('40')
-    expect(
-      document.querySelector<SVGTextElement>('.graph-label-overlay text')?.style
-        .fontVariationSettings,
-    ).toContain('"BEVL" 40.6')
-
     const categoryText = screen.getByRole('button', {
       name: '分类文字',
     })

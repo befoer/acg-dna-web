@@ -223,16 +223,12 @@ export function CategoryAppearancePanel({
               update({
                 fontFamily: value,
                 ...(value === 'resource-rounded' ? { fontWeight: 700 } : {}),
-                ...(value === 'alimama-fangyuan' && settings.fontWeight > 700
-                  ? { fontWeight: 700 }
-                  : {}),
               })
             }}
           >
             <option value={'inherit'}>跟随全局</option>
             <option value={'sans'}>系统黑体</option>
             <option value={'resource-rounded'}>资源圆体 Bold</option>
-            <option value={'alimama-fangyuan'}>阿里妈妈方圆体</option>
           </select>
         </label>
         {settings.fontFamily === 'resource-rounded' ? (
@@ -242,25 +238,12 @@ export function CategoryAppearancePanel({
             label={'字重'}
             value={settings.fontWeight}
             minimum={300}
-            maximum={settings.fontFamily === 'alimama-fangyuan' ? 700 : 900}
+            maximum={900}
             step={100}
             display={String(settings.fontWeight)}
             onChange={(value) => update({ fontWeight: value }, 'font-weight')}
           />
         )}
-        {settings.fontFamily === 'alimama-fangyuan' ? (
-          <CategorySlider
-            label={'圆度'}
-            value={settings.fontRoundness}
-            minimum={0}
-            maximum={100}
-            step={5}
-            display={Math.round(settings.fontRoundness) + '%'}
-            onChange={(value) =>
-              update({ fontRoundness: value }, 'font-roundness')
-            }
-          />
-        ) : null}
       </section>
 
       <section className={'global-settings-card'}>

@@ -122,7 +122,6 @@ function CustomTextCard({
   onUpdate,
   onDelete,
 }: CustomTextCardProps) {
-  const alimama = text.fontFamily === 'alimama-fangyuan'
   const supportsWeight = text.fontFamily !== 'resource-rounded'
   return (
     <article
@@ -185,7 +184,6 @@ function CustomTextCard({
             >
               <option value={'sans'}>系统黑体</option>
               <option value={'resource-rounded'}>资源圆体 Bold</option>
-              <option value={'alimama-fangyuan'}>阿里妈妈方圆体</option>
             </select>
           </label>
           <SliderRow
@@ -200,25 +198,12 @@ function CustomTextCard({
             <SliderRow
               label={'粗细'}
               value={text.fontWeight}
-              min={alimama ? 200 : 250}
-              max={alimama ? 700 : 900}
+              min={250}
+              max={900}
               step={50}
               display={String(Math.round(text.fontWeight))}
               onChange={(value) =>
                 onUpdate({ fontWeight: value }, 'font-weight')
-              }
-            />
-          ) : null}
-          {alimama ? (
-            <SliderRow
-              label={'圆度'}
-              value={text.roundness * 100}
-              min={0}
-              max={100}
-              step={5}
-              display={Math.round(text.roundness * 100) + '%'}
-              onChange={(value) =>
-                onUpdate({ roundness: value / 100 }, 'roundness')
               }
             />
           ) : null}
@@ -392,7 +377,6 @@ export function ProfilePanel() {
       visible: true,
       strokeWidth: 0,
       strokeColor: '#FFFFFF',
-      roundness: 0,
     }
     update({ customTexts: [text, ...profile.customTexts] })
     dispatch({ type: 'custom-text-selected', textId: text.id })

@@ -210,7 +210,6 @@ describe('graph document schema', () => {
         visible: true,
         strokeWidth: 0,
         strokeColor: '#ffffff',
-        roundness: 0,
       },
     ]
     const textLayerId = decorationCustomTextLayerId('text-one')
@@ -324,13 +323,6 @@ describe('graph document schema', () => {
     const invalidColor = createStarterGraph('2026-07-15T00:00:00.000Z')
     invalidColor.canvas.labelSettings.textColorOverride = 'red'
     expect(() => parseGraphDocument(invalidColor)).toThrow(/textColorOverride/)
-
-    const invalidRoundness = createStarterGraph('2026-07-15T00:00:00.000Z')
-    invalidRoundness.canvas.labelSettings.fontRoundness = 101
-    expect(() => parseGraphDocument(invalidRoundness)).toThrow(/fontRoundness/)
-
-    invalidRoundness.canvas.labelSettings.fontRoundness = -1
-    expect(() => parseGraphDocument(invalidRoundness)).toThrow(/fontRoundness/)
   })
 
   it('round-trips category appearance overrides and resolves global fallbacks', () => {
@@ -338,9 +330,8 @@ describe('graph document schema', () => {
     input.categories[0]!.appearance = {
       showLabelImages: false,
       fillFactor: 1.25,
-      fontFamily: 'alimama-fangyuan',
+      fontFamily: 'resource-rounded',
       fontWeight: 700,
-      fontRoundness: 80,
       textColorOverride: '#F0F0F0',
       imageMask: 'category',
       imageMaskOpacity: 0.4,
@@ -359,8 +350,7 @@ describe('graph document schema', () => {
       showLabelImages: false,
       showCategoryText: true,
       fillFactor: 1.25,
-      fontFamily: 'alimama-fangyuan',
-      fontRoundness: 80,
+      fontFamily: 'resource-rounded',
       imageMask: 'category',
     })
   })
@@ -396,14 +386,8 @@ describe('graph document schema', () => {
         typeof rounded.canvas.labelSettings
       >
     ).localFontName
-    delete (
-      rounded.canvas.labelSettings as Partial<
-        typeof rounded.canvas.labelSettings
-      >
-    ).fontRoundness
     const migrated = parseGraphDocument(rounded).canvas.labelSettings
     expect(migrated.fontFamily).toBe('resource-rounded')
-    expect(migrated.fontRoundness).toBe(0)
 
     const missingLocalFont = createStarterGraph('2026-07-15T00:00:00.000Z')
     missingLocalFont.canvas.labelSettings.fontFamily = 'local'

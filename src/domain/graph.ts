@@ -4,14 +4,12 @@ export type GraphSchemaVersion = typeof GRAPH_SCHEMA_VERSION
 export type GraphNodeKind = 'category' | 'attribute' | 'subAttribute'
 export type GraphLayoutMode = 'packing' | 'gravity'
 export type GraphTemplateId = 'custom' | 'cute-pink' | 'endfield'
-export type GraphLabelFontFamily =
-  'sans' | 'resource-rounded' | 'alimama-fangyuan' | 'local'
+export type GraphLabelFontFamily = 'sans' | 'resource-rounded' | 'local'
 export type GraphCategoryFontFamily = Exclude<GraphLabelFontFamily, 'local'>
 export type GraphImageMask = 'none' | 'black' | 'white' | 'category'
 export type GraphProfileGender = 'none' | 'male' | 'female'
 export type GraphProfileLabelType = 'location' | 'job' | 'mbti' | 'expansion'
-export type GraphProfileTextFontFamily =
-  'sans' | 'resource-rounded' | 'alimama-fangyuan'
+export type GraphProfileTextFontFamily = 'sans' | 'resource-rounded'
 
 export interface GraphContentBounds {
   left: number
@@ -233,7 +231,6 @@ export interface GraphLabelSettings {
   fillOpacity: number
   fontFamily: GraphLabelFontFamily
   fontWeight: number
-  fontRoundness: number
   localFontId: string | null
   localFontName: string | null
   colorOverride: string | null
@@ -250,7 +247,6 @@ export const DEFAULT_LABEL_SETTINGS: GraphLabelSettings = {
   fillOpacity: 1,
   fontFamily: 'sans',
   fontWeight: 600,
-  fontRoundness: 0,
   localFontId: null,
   localFontName: null,
   colorOverride: null,
@@ -265,7 +261,6 @@ export interface GraphCategoryAppearance {
   fillFactor?: number
   fontFamily?: GraphCategoryFontFamily
   fontWeight?: number
-  fontRoundness?: number
   categoryStrokeWidth?: number
   labelStrokeWidth?: number
   textColorOverride?: string | null
@@ -318,7 +313,6 @@ export interface GraphProfileCustomText {
   visible: boolean
   strokeWidth: number
   strokeColor: string
-  roundness: number
 }
 
 export const DEFAULT_PROFILE_SETTINGS: GraphProfileSettings = {
@@ -409,7 +403,6 @@ export function resolveCategoryAppearance(
       appearance?.labelStrokeWidth ?? globalSettings.labelStrokeWidth,
     fontFamily,
     fontWeight: appearance?.fontWeight ?? globalSettings.fontWeight,
-    fontRoundness: appearance?.fontRoundness ?? globalSettings.fontRoundness,
     localFontId: fontFamily === 'local' ? globalSettings.localFontId : null,
     localFontName: fontFamily === 'local' ? globalSettings.localFontName : null,
     textColorOverride:
@@ -870,12 +863,10 @@ function readProfileTextFontFamily(
   const value = record.fontFamily ?? 'sans'
   if (value === 'default' || value === 'source_han_sans_vf') return 'sans'
   if (value === 'source_han_rounded') return 'resource-rounded'
-  if (value === 'alimama_fangyuanti') return 'alimama-fangyuan'
-  if (
-    value !== 'sans' &&
-    value !== 'resource-rounded' &&
-    value !== 'alimama-fangyuan'
-  ) {
+  if (value === 'alimama_fangyuanti' || value === 'alimama-fangyuan') {
+    return 'resource-rounded'
+  }
+  if (value !== 'sans' && value !== 'resource-rounded') {
     throw new GraphValidationError(path + '.fontFamily 不是支持的资料文字字体')
   }
   return value
@@ -1019,7 +1010,6 @@ function readProfileSettings(
             textPath,
             '#FFFFFF',
           ),
-          roundness: readNumber(customText, 'roundness', textPath, 0, 1),
         }
       },
     )
@@ -1173,7 +1163,9 @@ function readLabelSettings(record: UnknownRecord): GraphLabelSettings {
   const fontFamily =
     fontFamilyValue === undefined
       ? DEFAULT_LABEL_SETTINGS.fontFamily
-      : fontFamilyValue === 'rounded'
+      : fontFamilyValue === 'rounded' ||
+          fontFamilyValue === 'alimama-fangyuan' ||
+          fontFamilyValue === 'alimama_fangyuanti'
         ? 'resource-rounded'
         : fontFamilyValue === 'serif'
           ? 'sans'
@@ -1181,12 +1173,10 @@ function readLabelSettings(record: UnknownRecord): GraphLabelSettings {
   if (
     fontFamily !== 'sans' &&
     fontFamily !== 'resource-rounded' &&
-    fontFamily !== 'alimama-fangyuan' &&
     fontFamily !== 'local'
   ) {
     throw new GraphValidationError(
-      path +
-        '.fontFamily 必须是 sans、resource-rounded、alimama-fangyuan 或 local',
+      path + '.fontFamily 必须是 sans、resource-rounded 或 local',
     )
   }
   const readNullableStringSetting = (
@@ -1251,12 +1241,6 @@ function readLabelSettings(record: UnknownRecord): GraphLabelSettings {
       300,
       900,
     ),
-    fontRoundness: readNumberSetting(
-      'fontRoundness',
-      DEFAULT_LABEL_SETTINGS.fontRoundness,
-      0,
-      100,
-    ),
     localFontId,
     localFontName,
     colorOverride: readColorSetting('colorOverride'),
@@ -1297,7 +1281,6 @@ function readCategoryAppearance(
     key:
       | 'fillFactor'
       | 'fontWeight'
-      | 'fontRoundness'
       | 'categoryStrokeWidth'
       | 'labelStrokeWidth'
       | 'imageMaskOpacity',
@@ -1316,26 +1299,20 @@ function readCategoryAppearance(
   }
   readOptionalNumber('fillFactor', 0.5, 1.5)
   readOptionalNumber('fontWeight', 300, 900)
-  readOptionalNumber('fontRoundness', 0, 100)
   readOptionalNumber('categoryStrokeWidth', 0, 10)
   readOptionalNumber('labelStrokeWidth', 0, 10)
   readOptionalNumber('imageMaskOpacity', 0, 1)
 
   if (source.fontFamily !== undefined) {
     const value =
-      source.fontFamily === 'source_han_rounded'
+      source.fontFamily === 'source_han_rounded' ||
+      source.fontFamily === 'alimama_fangyuanti' ||
+      source.fontFamily === 'alimama-fangyuan'
         ? 'resource-rounded'
-        : source.fontFamily === 'alimama_fangyuanti'
-          ? 'alimama-fangyuan'
-          : source.fontFamily
-    if (
-      value !== 'sans' &&
-      value !== 'resource-rounded' &&
-      value !== 'alimama-fangyuan'
-    ) {
+        : source.fontFamily
+    if (value !== 'sans' && value !== 'resource-rounded') {
       throw new GraphValidationError(
-        appearancePath +
-          '.fontFamily 必须是 sans、resource-rounded 或 alimama-fangyuan',
+        appearancePath + '.fontFamily 必须是 sans 或 resource-rounded',
       )
     }
     appearance.fontFamily = value

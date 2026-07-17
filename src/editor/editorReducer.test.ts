@@ -466,7 +466,6 @@ describe('editor reducer', () => {
             visible: true,
             strokeWidth: 0,
             strokeColor: '#ffffff',
-            roundness: 0,
           },
         ],
       },

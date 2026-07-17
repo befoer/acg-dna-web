@@ -479,21 +479,19 @@ function drawCustomTexts(
       }
     }
 
-    if (customText.fontFamily !== 'alimama-fangyuan') {
-      context.lineJoin = 'round'
-      context.lineCap = 'round'
-      if (customText.strokeWidth > 0) {
-        context.strokeStyle = customText.strokeColor
-        context.lineWidth = customText.strokeWidth * scale * 2
-        characters.forEach((item) =>
-          context.strokeText(item.character, item.x, item.y),
-        )
-      }
-      context.fillStyle = customText.color
+    context.lineJoin = 'round'
+    context.lineCap = 'round'
+    if (customText.strokeWidth > 0) {
+      context.strokeStyle = customText.strokeColor
+      context.lineWidth = customText.strokeWidth * scale * 2
       characters.forEach((item) =>
-        context.fillText(item.character, item.x, item.y),
+        context.strokeText(item.character, item.x, item.y),
       )
     }
+    context.fillStyle = customText.color
+    characters.forEach((item) =>
+      context.fillText(item.character, item.x, item.y),
+    )
 
     if (selectedCustomTextId === customText.id) {
       const padding = 6 * scale

@@ -2459,34 +2459,6 @@ button.persistence-retry {
   outline-offset: 4px;
 }
 
-.graph-label-overlay {
-  z-index: 1;
-  grid-area: 1 / 1;
-  display: block;
-  max-width: none;
-  max-height: none;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.graph-profile-overlay {
-  z-index: 2;
-  grid-area: 1 / 1;
-  display: block;
-  max-width: none;
-  max-height: none;
-  pointer-events: none;
-}
-
-.graph-decoration-overlay {
-  z-index: 4;
-  grid-area: 1 / 1;
-  display: block;
-  max-width: none;
-  max-height: none;
-  pointer-events: none;
-}
-
 .canvas-hint {
   flex: 0 0 auto;
   margin: 12px 0 0;

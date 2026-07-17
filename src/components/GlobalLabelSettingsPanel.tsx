@@ -215,11 +215,6 @@ export function GlobalLabelSettingsPanel({
               const value = event.currentTarget.value
               if (value === 'resource-rounded') {
                 update({ fontFamily: value, fontWeight: 700 })
-              } else if (value === 'alimama-fangyuan') {
-                update({
-                  fontFamily: value,
-                  fontWeight: Math.min(700, settings.fontWeight),
-                })
               } else if (value === 'local' && settings.localFontId) {
                 update({ fontFamily: value })
               } else {
@@ -229,7 +224,6 @@ export function GlobalLabelSettingsPanel({
           >
             <option value={'sans'}>系统黑体</option>
             <option value={'resource-rounded'}>资源圆体 Bold</option>
-            <option value={'alimama-fangyuan'}>阿里妈妈方圆体</option>
             {settings.localFontId ? (
               <option value={'local'}>
                 本地 · {settings.localFontName ?? '已载入字体'}
@@ -245,26 +239,12 @@ export function GlobalLabelSettingsPanel({
             label={'字重'}
             value={settings.fontWeight}
             minimum={300}
-            maximum={settings.fontFamily === 'alimama-fangyuan' ? 700 : 900}
+            maximum={900}
             step={100}
             display={String(settings.fontWeight)}
             onChange={(fontWeight) => update({ fontWeight }, 'font-weight')}
           />
         )}
-        {settings.fontFamily === 'alimama-fangyuan' ? (
-          <SliderSetting
-            id={'global-font-roundness'}
-            label={'圆度'}
-            value={settings.fontRoundness}
-            minimum={0}
-            maximum={100}
-            step={5}
-            display={String(settings.fontRoundness) + '%'}
-            onChange={(fontRoundness) =>
-              update({ fontRoundness }, 'font-roundness')
-            }
-          />
-        ) : null}
         <div className={'local-font-row'}>
           <div>
             <strong>加载本地字体</strong>

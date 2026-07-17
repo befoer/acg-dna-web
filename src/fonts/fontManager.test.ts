@@ -146,45 +146,6 @@ describe('graph font manager', () => {
     expect(addedFaces).toHaveLength(1)
   })
 
-  it('loads one Alimama base face and resolves CSS variation axes', async () => {
-    const {
-      ensureGraphFontLoaded,
-      getGraphFontCssFamily,
-      resolveAlimamaVariation,
-    } = await import('./fontManager')
-    const settings = {
-      ...DEFAULT_LABEL_SETTINGS,
-      fontFamily: 'alimama-fangyuan' as const,
-      fontWeight: 700,
-      fontRoundness: 42,
-    }
-
-    await ensureGraphFontLoaded(settings)
-    await ensureGraphFontLoaded(settings)
-    await ensureGraphFontLoaded({ ...settings, fontRoundness: 80 })
-
-    expect(fontFaceCalls).toHaveLength(1)
-    expect(fontFaceCalls[0]).toMatchObject({
-      family: 'ACGDNA Alimama FangYuan',
-      descriptors: { display: 'swap', weight: '200 700' },
-    })
-    expect(fontFaceCalls[0]?.descriptors?.variationSettings).toBeUndefined()
-    expect(getGraphFontCssFamily(settings)).toContain('ACGDNA Alimama FangYuan')
-    expect(resolveAlimamaVariation(700, 42)).toEqual({
-      weight: 700,
-      roundness: 40,
-      bevl: 40.6,
-      settings: '"wght" 700, "BEVL" 40.6',
-    })
-    expect(resolveAlimamaVariation(900, -2)).toEqual({
-      weight: 700,
-      roundness: 0,
-      bevl: 1,
-      settings: '"wght" 700, "BEVL" 1',
-    })
-    expect(addedFaces).toHaveLength(1)
-  })
-
   it('restores a local font from IndexedDB in a new module session', async () => {
     const firstManager = await import('./fontManager')
     const registered = await firstManager.registerLocalFont(

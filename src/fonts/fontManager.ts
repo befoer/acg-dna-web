@@ -1,4 +1,3 @@
-import alimamaFangyuanUrl from '../assets/fonts/alimama-fangyuan-vf.ttf'
 import resourceHanRoundedUrl from '../assets/fonts/resource-han-rounded-bold.woff2'
 import {
   createEntityId,
@@ -15,17 +14,8 @@ import {
 export const MAX_LOCAL_FONT_BYTES = 20 * 1024 * 1024
 
 export const RESOURCE_ROUNDED_FAMILY = 'ACGDNA Resource Han Rounded'
-export const ALIMAMA_FANGYUAN_FAMILY = 'ACGDNA Alimama FangYuan'
 const loadedFontPromises = new Map<string, Promise<void>>()
 const sessionLocalFonts = new Map<string, StoredLocalFont>()
-let alimamaDataUrlPromise: Promise<string> | null = null
-
-export interface AlimamaVariation {
-  weight: number
-  roundness: number
-  bevl: number
-  settings: string
-}
 
 export interface RegisteredLocalFont {
   id: string
@@ -48,22 +38,6 @@ function quotedFamily(family: string): string {
   return '"' + family.replaceAll('"', '') + '"'
 }
 
-export function resolveAlimamaVariation(
-  fontWeight: number,
-  fontRoundness: number,
-): AlimamaVariation {
-  const weight = Math.max(200, Math.min(700, Math.round(fontWeight)))
-  const percentage = Math.max(0, Math.min(100, Math.round(fontRoundness)))
-  const roundness = Math.floor(percentage / 5) * 5
-  const bevl = Number((1 + roundness * 0.99).toFixed(2))
-  return {
-    weight,
-    roundness,
-    bevl,
-    settings: '"wght" ' + weight + ', "BEVL" ' + bevl,
-  }
-}
-
 export function getGraphFontCssFamily(settings: GraphLabelSettings): string {
   switch (settings.fontFamily) {
     case 'resource-rounded':
@@ -71,8 +45,6 @@ export function getGraphFontCssFamily(settings: GraphLabelSettings): string {
         quotedFamily(RESOURCE_ROUNDED_FAMILY) +
         ', ui-rounded, system-ui, sans-serif'
       )
-    case 'alimama-fangyuan':
-      return quotedFamily(ALIMAMA_FANGYUAN_FAMILY) + ', system-ui, sans-serif'
     case 'local':
       return settings.localFontId
         ? quotedFamily(localFontFamily(settings.localFontId)) +
@@ -91,9 +63,6 @@ export function getProfileTextFontCssFamily(
       quotedFamily(RESOURCE_ROUNDED_FAMILY) +
       ', ui-rounded, system-ui, sans-serif'
     )
-  }
-  if (fontFamily === 'alimama-fangyuan') {
-    return quotedFamily(ALIMAMA_FANGYUAN_FAMILY) + ', system-ui, sans-serif'
   }
   return 'Inter, "Noto Sans SC", system-ui, sans-serif'
 }
@@ -122,49 +91,6 @@ function loadFaceOnce(key: string, createFace: () => FontFace): Promise<void> {
   loadedFontPromises.set(key, loading)
   void loading.catch(() => loadedFontPromises.delete(key))
   return loading
-}
-
-function loadAlimamaFace(): Promise<void> {
-  return loadFaceOnce(
-    'builtin:alimama-fangyuan',
-    () =>
-      new FontFace(
-        ALIMAMA_FANGYUAN_FAMILY,
-        'url("' + alimamaFangyuanUrl + '")',
-        {
-          display: 'swap',
-          weight: '200 700',
-        },
-      ),
-  )
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(
-      ...bytes.subarray(offset, Math.min(bytes.length, offset + chunkSize)),
-    )
-  }
-  return window.btoa(binary)
-}
-
-export function getAlimamaFontDataUrl(): Promise<string> {
-  if (alimamaDataUrlPromise) return alimamaDataUrlPromise
-  alimamaDataUrlPromise = fetch(alimamaFangyuanUrl)
-    .then((response) => {
-      if (!response.ok) throw new Error('阿里妈妈方圆体文件读取失败')
-      return response.arrayBuffer()
-    })
-    .then(
-      (buffer) =>
-        'data:font/ttf;base64,' + bytesToBase64(new Uint8Array(buffer)),
-    )
-  void alimamaDataUrlPromise.catch(() => {
-    alimamaDataUrlPromise = null
-  })
-  return alimamaDataUrlPromise
 }
 
 async function loadLocalFontRecord(font: StoredLocalFont): Promise<void> {
@@ -199,8 +125,6 @@ export async function ensureGraphFontLoaded(
             },
           ),
       )
-    case 'alimama-fangyuan':
-      return loadAlimamaFace()
     case 'local': {
       if (!settings.localFontId) {
         throw new GraphFontError('项目缺少本地字体 ID')
@@ -231,26 +155,19 @@ export async function ensureProfileFontsLoaded(
   const needsResourceRounded =
     profile.subTemplateId?.startsWith('cute_pink') === true ||
     profile.customTexts.some((text) => text.fontFamily === 'resource-rounded')
-  const needsAlimama = profile.customTexts.some(
-    (text) => text.fontFamily === 'alimama-fangyuan',
+  if (!needsResourceRounded) return
+  await loadFaceOnce(
+    'builtin:resource-rounded',
+    () =>
+      new FontFace(
+        RESOURCE_ROUNDED_FAMILY,
+        'url("' + resourceHanRoundedUrl + '")',
+        {
+          display: 'swap',
+          weight: '700',
+        },
+      ),
   )
-  await Promise.all([
-    needsResourceRounded
-      ? loadFaceOnce(
-          'builtin:resource-rounded',
-          () =>
-            new FontFace(
-              RESOURCE_ROUNDED_FAMILY,
-              'url("' + resourceHanRoundedUrl + '")',
-              {
-                display: 'swap',
-                weight: '700',
-              },
-            ),
-        )
-      : Promise.resolve(),
-    needsAlimama ? loadAlimamaFace() : Promise.resolve(),
-  ])
 }
 
 function supportedFontSignature(bytes: Uint8Array): boolean {

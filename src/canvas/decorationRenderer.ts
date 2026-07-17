@@ -1,14 +1,10 @@
 import { DECORATION_PRESETS } from '../domain/decorationPresets'
 import {
-  DECORATION_DATA_LAYER_ID,
   DECORATION_PATTERN_LAYER_ID,
-  customTextIdFromDecorationLayer,
   decorationFrameLayerId,
   decorationImageLayerId,
   decorationPresetLayerId,
-  resolveDecorationLayerOrder,
 } from '../domain/graph'
-import { drawProfileCustomText } from './profileRenderer'
 import type {
   GraphDecorationFrame,
   GraphDecorationPattern,
@@ -332,48 +328,6 @@ export function drawDecorationFrameSelection(
     ),
   )
   context.restore()
-}
-
-export function drawDecorationLayersAboveData(
-  context: CanvasRenderingContext2D,
-  document: GraphDocument,
-  presetAssets: DecorationPresetAssetMap,
-  localAssets: LocalImageAssetMap,
-  options: {
-    selectedCustomTextId?: string | null
-    alimamaProfileTextImages?: Readonly<Record<string, HTMLImageElement>>
-  } = {},
-): void {
-  const order = resolveDecorationLayerOrder(
-    document.decoration,
-    document.profile.customTexts.map((text) => text.id),
-  )
-  const dataIndex = order.indexOf(DECORATION_DATA_LAYER_ID)
-  if (dataIndex <= 0) return
-  ;[...order.slice(0, dataIndex)].reverse().forEach((layerId) => {
-    const customTextId = customTextIdFromDecorationLayer(layerId)
-    if (customTextId) {
-      if (document.decoration.hiddenLayerIds.includes(layerId)) return
-      const alimamaImage = options.alimamaProfileTextImages?.[customTextId]
-      if (alimamaImage) {
-        context.drawImage(
-          alimamaImage,
-          0,
-          0,
-          document.canvas.width,
-          document.canvas.height,
-        )
-      }
-      drawProfileCustomText(
-        context,
-        document,
-        customTextId,
-        options.selectedCustomTextId,
-      )
-      return
-    }
-    drawDecorationLayer(context, document, presetAssets, localAssets, layerId)
-  })
 }
 
 export function createDecorationImageRegions(

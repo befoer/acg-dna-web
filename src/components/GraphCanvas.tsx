@@ -14,11 +14,9 @@ import {
 } from '../canvas/decorationGesture'
 import {
   createProfileCustomTextRegions,
-  drawProfileTemplate,
   hitTestProfileCustomText,
   type ProfileCustomTextRegion,
 } from '../canvas/profileRenderer'
-import { createAlimamaProfileTextImage } from '../canvas/profileTextOverlay'
 import {
   loadProfileTemplateAssets,
   type ProfileTemplateAssetMap,
@@ -27,9 +25,6 @@ import { loadTemplateBackground } from '../canvas/templateBackground'
 import {
   createDecorationImageRegions,
   createDecorationFrameRegions,
-  drawDecorationFrameSelection,
-  drawDecorationImageSelection,
-  drawDecorationLayersAboveData,
   hitTestDecorationImage,
   hitTestDecorationFrame,
   isDecorationFrameResizeHandleHit,
@@ -57,7 +52,6 @@ import {
 import type { BasicLayoutResult } from '../layout/basicLayout'
 import { findLayoutNodeAtPoint } from './canvasHitTest'
 import { computeFitScale } from './canvasScale'
-import { GraphLabelOverlay } from './GraphLabelOverlay'
 
 const CANVAS_GUTTER = 18
 const EMPTY_PROFILE_TEMPLATE_ASSETS: ProfileTemplateAssetMap = {}
@@ -75,8 +69,6 @@ export function GraphCanvas({
   const { state, dispatch } = useEditor()
   const frameRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const profileCanvasRef = useRef<HTMLCanvasElement>(null)
-  const decorationOverlayRef = useRef<HTMLCanvasElement>(null)
   const layoutRef = useRef<BasicLayoutResult | null>(null)
   const customTextRegionsRef = useRef<ProfileCustomTextRegion[]>([])
   const decorationImageRegionsRef = useRef<DecorationImageRegion[]>([])
@@ -132,9 +124,6 @@ export function GraphCanvas({
   const [decorationPresetAssets, setDecorationPresetAssets] =
     useState<DecorationPresetAssetMap>(EMPTY_DECORATION_PRESET_ASSETS)
   const [fontRevision, setFontRevision] = useState(0)
-  const [alimamaProfileTextImages, setAlimamaProfileTextImages] = useState<
-    Record<string, HTMLImageElement>
-  >({})
   const {
     categories,
     canvas: {
@@ -203,45 +192,9 @@ export function GraphCanvas({
       ),
     [categories, labelSettings],
   )
-  const dataLayerVisible = !decoration.hiddenLayerIds.includes(
-    DECORATION_DATA_LAYER_ID,
-  )
-  const usesAlimama =
-    dataLayerVisible &&
-    categoryLabelSettings.some(
-      (settings) => settings.fontFamily === 'alimama-fangyuan',
-    )
-  const usesVariableTextOverlay = usesAlimama
-
   useEffect(() => {
     if (!showContentBounds) contentBoundsDragRef.current = null
   }, [showContentBounds])
-
-  useEffect(() => {
-    let cancelled = false
-    const texts = profile.customTexts.filter(
-      (text) => text.visible && text.fontFamily === 'alimama-fangyuan',
-    )
-    void Promise.all(
-      texts.map(
-        async (text) =>
-          [
-            text.id,
-            await createAlimamaProfileTextImage(state.document, text.id),
-          ] as const,
-      ),
-    ).then(
-      (entries) => {
-        if (!cancelled) setAlimamaProfileTextImages(Object.fromEntries(entries))
-      },
-      () => {
-        if (!cancelled) setAlimamaProfileTextImages({})
-      },
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [profile.customTexts, state.document])
 
   useEffect(() => {
     let cancelled = false
@@ -328,11 +281,7 @@ export function GraphCanvas({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    const profileCanvas = profileCanvasRef.current
-    const decorationOverlay = decorationOverlayRef.current
     const context = canvas?.getContext('2d')
-    const profileContext = profileCanvas?.getContext('2d')
-    const decorationOverlayContext = decorationOverlay?.getContext('2d')
     if (!canvas || !context) return
     if (fontRevision < 0) return
 
@@ -345,22 +294,9 @@ export function GraphCanvas({
       selectedCustomTextId: state.editingCustomTextId,
       selectedDecorationImageId: state.editingDecorationImageId,
       selectedDecorationFrameId: state.editingDecorationFrameId,
-      alimamaProfileTextImages,
       showContentBounds,
       drawNodeText: true,
-      drawProfileTemplate: !usesVariableTextOverlay,
     })
-    if (profileCanvas && profileContext) {
-      profileContext.clearRect(0, 0, profileCanvas.width, profileCanvas.height)
-      if (dataLayerVisible && usesVariableTextOverlay) {
-        drawProfileTemplate(
-          profileContext,
-          state.document,
-          state.assets,
-          profileTemplateAssets,
-        )
-      }
-    }
     layoutRef.current = layout
     customTextRegionsRef.current = createProfileCustomTextRegions(
       context,
@@ -373,37 +309,6 @@ export function GraphCanvas({
     decorationFrameRegionsRef.current = createDecorationFrameRegions(
       state.document,
     )
-    if (decorationOverlay && decorationOverlayContext) {
-      decorationOverlayContext.clearRect(
-        0,
-        0,
-        decorationOverlay.width,
-        decorationOverlay.height,
-      )
-      if (dataLayerVisible && usesVariableTextOverlay) {
-        drawDecorationLayersAboveData(
-          decorationOverlayContext,
-          state.document,
-          decorationPresetAssets,
-          state.assets,
-          {
-            selectedCustomTextId: state.editingCustomTextId,
-            alimamaProfileTextImages,
-          },
-        )
-        drawDecorationImageSelection(
-          decorationOverlayContext,
-          state.document,
-          state.assets,
-          state.editingDecorationImageId,
-        )
-        drawDecorationFrameSelection(
-          decorationOverlayContext,
-          state.document,
-          state.editingDecorationFrameId,
-        )
-      }
-    }
   }, [
     layout,
     fontRevision,
@@ -416,11 +321,7 @@ export function GraphCanvas({
     state.selectedNodeId,
     profileTemplateAssets,
     decorationPresetAssets,
-    dataLayerVisible,
     templateBackground,
-    usesAlimama,
-    usesVariableTextOverlay,
-    alimamaProfileTextImages,
   ])
 
   useEffect(() => {
@@ -1118,32 +1019,6 @@ export function GraphCanvas({
           onPointerUp={finishCanvasElementDrag}
           onPointerCancel={finishCanvasElementDrag}
         />
-        <canvas
-          ref={profileCanvasRef}
-          className={'graph-profile-overlay'}
-          style={canvasStyle}
-          width={state.document.canvas.width}
-          height={state.document.canvas.height}
-          aria-hidden={true}
-        />
-        {usesAlimama ? (
-          <GraphLabelOverlay
-            document={state.document}
-            layout={layout}
-            assets={state.assets}
-            style={canvasStyle}
-          />
-        ) : null}
-        {usesVariableTextOverlay ? (
-          <canvas
-            ref={decorationOverlayRef}
-            className={'graph-decoration-overlay'}
-            style={canvasStyle}
-            width={state.document.canvas.width}
-            height={state.document.canvas.height}
-            aria-hidden={true}
-          />
-        ) : null}
       </div>
     </div>
   )

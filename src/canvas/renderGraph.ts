@@ -21,19 +21,16 @@ import {
 } from '../layout/basicLayout'
 import { createGravityLayout } from '../layout/gravityLayout'
 import { loadTemplateBackground } from './templateBackground'
-import { drawAlimamaLabelsToCanvas } from './graphLabelOverlay'
 import { drawTransformedImageCover } from './imageTransform'
 import {
   loadProfileTemplateAssets,
   type ProfileTemplateAssetMap,
 } from './profileTemplateAssets'
 import { drawProfileCustomText, drawProfileTemplate } from './profileRenderer'
-import { createAlimamaProfileTextImage } from './profileTextOverlay'
 import {
   drawDecorationImageSelection,
   drawDecorationFrameSelection,
   drawDecorationLayer,
-  drawDecorationLayersAboveData,
   loadDecorationPresetAssets,
   type DecorationPresetAssetMap,
 } from './decorationRenderer'
@@ -52,7 +49,6 @@ export interface RenderGraphOptions {
   decorationPresetAssets?: DecorationPresetAssetMap
   selectedDecorationImageId?: string | null
   selectedDecorationFrameId?: string | null
-  alimamaProfileTextImages?: Readonly<Record<string, HTMLImageElement>>
 }
 
 function fitLayoutToBounds(
@@ -335,7 +331,7 @@ function drawNode(
     node.kind === 'category'
       ? settings.showCategoryText
       : settings.showLabelText
-  if (showText && drawNodeText && settings.fontFamily !== 'alimama-fangyuan') {
+  if (showText && drawNodeText) {
     drawNodeLabel(context, node, Boolean(asset), settings)
   }
 
@@ -552,10 +548,6 @@ export function renderGraph(
         const customTextId = customTextIdFromDecorationLayer(layerId)
         if (customTextId) {
           if (hiddenLayers.has(layerId)) return
-          const alimamaImage = options.alimamaProfileTextImages?.[customTextId]
-          if (alimamaImage) {
-            context.drawImage(alimamaImage, 0, 0, width, height)
-          }
           drawProfileCustomText(
             context,
             document,
@@ -626,30 +618,7 @@ export async function downloadGraphPng(
       ),
       loadDecorationPresetAssets(),
     ])
-  const usesAlimama = document.categories.some(
-    (category) =>
-      resolveCategoryAppearance(category, document.canvas.labelSettings)
-        .fontFamily === 'alimama-fangyuan',
-  )
-  const usesProfileAlimama = document.profile.customTexts.some(
-    (text) => text.visible && text.fontFamily === 'alimama-fangyuan',
-  )
-  const dataLayerVisible = !document.decoration.hiddenLayerIds.includes(
-    DECORATION_DATA_LAYER_ID,
-  )
   const layout = createGraphLayout(document)
-  const alimamaProfileTextEntries = await Promise.all(
-    document.profile.customTexts
-      .filter((text) => text.visible && text.fontFamily === 'alimama-fangyuan')
-      .map(
-        async (text) =>
-          [
-            text.id,
-            await createAlimamaProfileTextImage(document, text.id),
-          ] as const,
-      ),
-  )
-  const alimamaProfileTextImages = Object.fromEntries(alimamaProfileTextEntries)
   renderGraph(context, document, assets, {
     templateBackground,
     decorationPresetAssets,
@@ -657,22 +626,7 @@ export async function downloadGraphPng(
     layout,
     drawNodeText: true,
     drawProfileTemplate: true,
-    alimamaProfileTextImages,
   })
-  if (dataLayerVisible && usesAlimama) {
-    await drawAlimamaLabelsToCanvas(context, document, layout, assets)
-  }
-  if (dataLayerVisible) {
-    if (usesAlimama || usesProfileAlimama) {
-      drawDecorationLayersAboveData(
-        context,
-        document,
-        decorationPresetAssets,
-        assets,
-        { alimamaProfileTextImages },
-      )
-    }
-  }
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((value) => {
       if (value) resolve(value)
