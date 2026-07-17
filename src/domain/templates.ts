@@ -25,7 +25,7 @@ export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
   {
     version: GRAPH_TEMPLATE_VERSION,
     id: 'custom',
-    name: '经典画布',
+    name: '自定义',
     description: '标签范围覆盖整张画布的纯色基础版式',
     backgroundColor: '#F6F2EC',
     width: 1380,

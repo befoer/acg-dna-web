@@ -2,24 +2,24 @@ import { useEffect, useState } from 'react'
 
 import { downloadGraphPng } from '../canvas/renderGraph'
 import { useEditor } from '../editor/editorContext'
-import { ContentBoundsPanel } from './ContentBoundsPanel'
+import { AppearancePanel } from './AppearancePanel'
 import { EditorPanel } from './EditorPanel'
 import { GraphCanvas } from './GraphCanvas'
 import { ProjectManager } from './ProjectManager'
 import { ProfilePanel } from './ProfilePanel'
 import { TemplatePanel } from './TemplatePanel'
 
-type EditorPanelId = 'data' | 'template' | 'profile' | 'bounds'
+type EditorPanelId = 'data' | 'template' | 'profile' | 'appearance'
 
 const EDITOR_PANELS: ReadonlyArray<{
   id: EditorPanelId
   label: string
   icon: string
 }> = [
-  { id: 'data', label: '数据', icon: '⌘' },
   { id: 'template', label: '模板', icon: '▦' },
+  { id: 'data', label: '数据', icon: '⌘' },
   { id: 'profile', label: '资料', icon: '◉' },
-  { id: 'bounds', label: '范围', icon: '⌗' },
+  { id: 'appearance', label: '外观', icon: '◐' },
 ]
 
 function persistenceStatusText(
@@ -89,6 +89,42 @@ function HistoryControls({
   )
 }
 
+interface PersistenceStatusProps {
+  className: string
+  text: string
+  failed: boolean
+  onRetry: () => void
+}
+
+function PersistenceStatus({
+  className,
+  text,
+  failed,
+  onRetry,
+}: PersistenceStatusProps) {
+  const content = (
+    <>
+      <span className="status-dot" />
+      <span className="persistence-status-text">{text}</span>
+      {failed ? <em>重试</em> : null}
+    </>
+  )
+  return failed ? (
+    <button
+      type="button"
+      className={className + ' persistence-retry'}
+      aria-label="保存失败，点击重试保存"
+      onClick={onRetry}
+    >
+      {content}
+    </button>
+  ) : (
+    <span className={className} role="status">
+      {content}
+    </span>
+  )
+}
+
 function DownloadIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -98,23 +134,31 @@ function DownloadIcon() {
 }
 
 export function EditorWorkspace() {
-  const { state, dispatch } = useEditor()
+  const { state, dispatch, retrySave } = useEditor()
   const [isExporting, setIsExporting] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
   const [activePanel, setActivePanel] = useState<EditorPanelId>('data')
+  const [contentBoundsEditing, setContentBoundsEditing] = useState(false)
   const persistenceText = persistenceStatusText(state.persistence)
   const canUndo = state.history.past.length > 0
   const canRedo = state.history.future.length > 0
   const activePanelLabel =
     EDITOR_PANELS.find((panel) => panel.id === activePanel)?.label ?? '数据'
+  const selectPanel = (panelId: EditorPanelId): void => {
+    setActivePanel(panelId)
+    if (panelId !== 'appearance') setContentBoundsEditing(false)
+  }
 
   const panelContent =
     activePanel === 'template' ? (
       <TemplatePanel />
     ) : activePanel === 'profile' ? (
       <ProfilePanel />
-    ) : activePanel === 'bounds' ? (
-      <ContentBoundsPanel />
+    ) : activePanel === 'appearance' ? (
+      <AppearancePanel
+        contentBoundsEditing={contentBoundsEditing}
+        onContentBoundsEditingChange={setContentBoundsEditing}
+      />
     ) : (
       <EditorPanel />
     )
@@ -207,10 +251,12 @@ export function EditorWorkspace() {
         />
 
         <div className="topbar-actions">
-          <span className="session-status" aria-live="polite">
-            <span className="status-dot" />
-            {persistenceText}
-          </span>
+          <PersistenceStatus
+            className="session-status"
+            text={persistenceText}
+            failed={state.persistence.status === 'error'}
+            onRetry={() => void retrySave()}
+          />
           <button
             type="button"
             className="export-button"
@@ -232,7 +278,7 @@ export function EditorWorkspace() {
                 type={'button'}
                 className={'tool-button' + (selected ? ' is-active' : '')}
                 aria-pressed={selected}
-                onClick={() => setActivePanel(panel.id)}
+                onClick={() => selectPanel(panel.id)}
                 key={panel.id}
               >
                 <span aria-hidden={true}>{panel.icon}</span>
@@ -259,7 +305,7 @@ export function EditorWorkspace() {
                   role={'tab'}
                   aria-selected={selected}
                   className={selected ? 'is-active' : ''}
-                  onClick={() => setActivePanel(panel.id)}
+                  onClick={() => selectPanel(panel.id)}
                   key={panel.id}
                 >
                   {panel.label}
@@ -338,16 +384,23 @@ export function EditorWorkspace() {
                 {state.document.canvas.width} × {state.document.canvas.height}
               </span>
             </div>
-            <span className="mobile-status" role="status">
-              {persistenceText}
-            </span>
+            <PersistenceStatus
+              className="mobile-status"
+              text={persistenceText}
+              failed={state.persistence.status === 'error'}
+              onRetry={() => void retrySave()}
+            />
           </div>
           <GraphCanvas
             zoom={previewZoom}
-            showContentBounds={activePanel === 'bounds'}
+            showContentBounds={
+              activePanel === 'appearance' && contentBoundsEditing
+            }
           />
           <p className="canvas-hint">
-            点击气泡选择节点 · 导出尺寸与屏幕预览解耦
+            {contentBoundsEditing
+              ? '拖动虚线框内部移动范围 · 拖四角或边框调整大小'
+              : '点击气泡或装饰图片选择 · 选中图片后可拖动和缩放'}
           </p>
         </section>
       </main>

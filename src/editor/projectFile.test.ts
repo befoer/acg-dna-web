@@ -14,6 +14,12 @@ const EXPORTED_AT = '2026-07-16T08:00:00.000Z'
 function snapshotWithImage(): PersistedEditorSnapshot {
   const document = createStarterGraph('2026-07-16T07:00:00.000Z')
   document.categories[0]!.attributes[0]!.imageAssetId = 'asset-cover'
+  document.categories[0]!.attributes[0]!.imageTransform = {
+    zoom: 1.6,
+    offsetX: 0.25,
+    offsetY: -0.4,
+    rotation: 20,
+  }
   const blob = new Blob([new Uint8Array([0, 1, 2, 253, 254, 255])], {
     type: 'image/png',
   })
@@ -42,6 +48,14 @@ describe('portable project file', () => {
 
     expect(parsed.document.name).toBe('我的 ACG DNA')
     expect(parsed.savedAt).toBe(EXPORTED_AT)
+    expect(
+      parsed.document.categories[0]!.attributes[0]!.imageTransform,
+    ).toEqual({
+      zoom: 1.6,
+      offsetX: 0.25,
+      offsetY: -0.4,
+      rotation: 20,
+    })
     expect(parsed.assets).toHaveLength(1)
     expect(parsed.assets[0]).toMatchObject({
       id: 'asset-cover',
@@ -82,6 +96,12 @@ describe('portable project file', () => {
   it('embeds a referenced local profile avatar', async () => {
     const document = createStarterGraph('2026-07-16T07:00:00.000Z')
     document.profile.avatarAssetId = 'asset-avatar'
+    document.profile.avatarTransform = {
+      zoom: 2,
+      offsetX: -0.5,
+      offsetY: 0.2,
+      rotation: -90,
+    }
     const blob = new Blob(['avatar'], { type: 'image/png' })
     const serialized = await serializeProjectFile(
       {
@@ -102,7 +122,53 @@ describe('portable project file', () => {
     const parsed = parseProjectFileText(serialized)
 
     expect(parsed.document.profile.avatarAssetId).toBe('asset-avatar')
+    expect(parsed.document.profile.avatarTransform).toEqual({
+      zoom: 2,
+      offsetX: -0.5,
+      offsetY: 0.2,
+      rotation: -90,
+    })
     expect(parsed.assets).toHaveLength(1)
+  })
+
+  it('embeds and restores free local decoration image assets', async () => {
+    const document = createStarterGraph('2026-07-16T07:00:00.000Z')
+    document.decoration.images = [
+      {
+        id: 'decoration-image-one',
+        name: '自由图片.webp',
+        assetId: 'asset-decoration-image',
+        visible: true,
+        x: 0.65,
+        y: 0.25,
+        size: 0.42,
+        rotation: 15,
+        opacity: 0.8,
+      },
+    ]
+    const blob = new Blob(['decoration-image'], { type: 'image/webp' })
+    const serialized = await serializeProjectFile(
+      {
+        document,
+        savedAt: EXPORTED_AT,
+        assets: [
+          {
+            id: 'asset-decoration-image',
+            fileName: '自由图片.webp',
+            mimeType: 'image/webp',
+            byteLength: blob.size,
+            blob,
+          },
+        ],
+      },
+      EXPORTED_AT,
+    )
+    const parsed = parseProjectFileText(serialized)
+
+    expect(parsed.document.decoration.images).toEqual(
+      document.decoration.images,
+    )
+    expect(parsed.assets[0]?.id).toBe('asset-decoration-image')
   })
 
   it('keeps only a local font reference and does not embed font bytes', async () => {

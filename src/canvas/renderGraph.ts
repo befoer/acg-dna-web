@@ -1,4 +1,12 @@
-import type { GraphDocument, GraphLabelSettings } from '../domain/graph'
+import {
+  DECORATION_DATA_LAYER_ID,
+  customTextIdFromDecorationLayer,
+  resolveCategoryAppearance,
+  resolveDecorationLayerOrder,
+  type GraphDocument,
+  type GraphLabelSettings,
+  type GraphImageMask,
+} from '../domain/graph'
 import { getGraphTemplate } from '../domain/templates'
 import type { LocalImageAsset } from '../editor/assets'
 import {
@@ -14,12 +22,21 @@ import {
 import { createGravityLayout } from '../layout/gravityLayout'
 import { loadTemplateBackground } from './templateBackground'
 import { drawAlimamaLabelsToCanvas } from './graphLabelOverlay'
+import { drawTransformedImageCover } from './imageTransform'
 import {
   loadProfileTemplateAssets,
   type ProfileTemplateAssetMap,
 } from './profileTemplateAssets'
-import { drawProfileCustomTexts, drawProfileTemplate } from './profileRenderer'
-import { drawAlimamaProfileTextsToCanvas } from './profileTextOverlay'
+import { drawProfileCustomText, drawProfileTemplate } from './profileRenderer'
+import { createAlimamaProfileTextImage } from './profileTextOverlay'
+import {
+  drawDecorationImageSelection,
+  drawDecorationFrameSelection,
+  drawDecorationLayer,
+  drawDecorationLayersAboveData,
+  loadDecorationPresetAssets,
+  type DecorationPresetAssetMap,
+} from './decorationRenderer'
 
 export type LocalImageAssetMap = Readonly<Record<string, LocalImageAsset>>
 
@@ -32,6 +49,10 @@ export interface RenderGraphOptions {
   profileTemplateAssets?: ProfileTemplateAssetMap
   selectedCustomTextId?: string | null
   drawProfileTemplate?: boolean
+  decorationPresetAssets?: DecorationPresetAssetMap
+  selectedDecorationImageId?: string | null
+  selectedDecorationFrameId?: string | null
+  alimamaProfileTextImages?: Readonly<Record<string, HTMLImageElement>>
 }
 
 function fitLayoutToBounds(
@@ -109,44 +130,6 @@ function hexToRgba(hex: string, alpha: number): string {
   const green = Number.parseInt(value.slice(2, 4), 16)
   const blue = Number.parseInt(value.slice(4, 6), 16)
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`
-}
-
-function drawImageCover(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  size: number,
-): void {
-  const sourceWidth = image.naturalWidth || image.width
-  const sourceHeight = image.naturalHeight || image.height
-  if (sourceWidth <= 0 || sourceHeight <= 0) return
-
-  const sourceRatio = sourceWidth / sourceHeight
-  let sourceX = 0
-  let sourceY = 0
-  let cropWidth = sourceWidth
-  let cropHeight = sourceHeight
-
-  if (sourceRatio > 1) {
-    cropWidth = sourceHeight
-    sourceX = (sourceWidth - cropWidth) / 2
-  } else {
-    cropHeight = sourceWidth
-    sourceY = (sourceHeight - cropHeight) / 2
-  }
-
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    cropWidth,
-    cropHeight,
-    x,
-    y,
-    size,
-    size,
-  )
 }
 
 function splitLabel(
@@ -243,14 +226,29 @@ function drawNode(
   node: LayoutNode,
   assets: LocalImageAssetMap,
   selectedNodeId: string | null | undefined,
-  settings: GraphLabelSettings,
+  document: GraphDocument,
   canvasWidth: number,
   drawNodeText: boolean,
 ): void {
+  const category = document.categories.find(
+    (item) => item.id === node.categoryId,
+  )
+  const settings = category
+    ? resolveCategoryAppearance(category, document.canvas.labelSettings)
+    : {
+        ...document.canvas.labelSettings,
+        showCategoryImage: document.canvas.labelSettings.showImages,
+        showLabelImages: document.canvas.labelSettings.showImages,
+        fillFactor: 1,
+        imageMask: 'none' as GraphImageMask,
+        imageMaskOpacity: 0.35,
+      }
+  const showsNodeImage =
+    node.kind === 'category'
+      ? settings.showCategoryImage
+      : settings.showLabelImages
   const asset =
-    settings.showImages && node.imageAssetId
-      ? assets[node.imageAssetId]
-      : undefined
+    showsNodeImage && node.imageAssetId ? assets[node.imageAssetId] : undefined
   const color = settings.colorOverride ?? node.color
   const fillAlpha =
     node.kind === 'category' ? 0.09 : node.kind === 'attribute' ? 0.2 : 0.82
@@ -270,13 +268,30 @@ function drawNode(
   if (asset) {
     context.save()
     context.clip()
-    drawImageCover(
+    drawTransformedImageCover(
       context,
       asset.image,
       node.x - node.radius,
       node.y - node.radius,
       node.radius * 2,
+      node.radius * 2,
+      node.imageTransform,
     )
+    if (settings.imageMask !== 'none' && settings.imageMaskOpacity > 0) {
+      const maskColor =
+        settings.imageMask === 'black'
+          ? '#000000'
+          : settings.imageMask === 'white'
+            ? '#FFFFFF'
+            : color
+      context.fillStyle = hexToRgba(maskColor, settings.imageMaskOpacity)
+      context.fillRect(
+        node.x - node.radius,
+        node.y - node.radius,
+        node.radius * 2,
+        node.radius * 2,
+      )
+    }
     const overlay = context.createLinearGradient(
       node.x,
       node.y - node.radius,
@@ -311,7 +326,7 @@ function drawNode(
       child,
       assets,
       selectedNodeId,
-      settings,
+      document,
       canvasWidth,
       drawNodeText,
     ),
@@ -320,7 +335,7 @@ function drawNode(
     node.kind === 'category'
       ? settings.showCategoryText
       : settings.showLabelText
-  if (showText && drawNodeText) {
+  if (showText && drawNodeText && settings.fontFamily !== 'alimama-fangyuan') {
     drawNodeLabel(context, node, Boolean(asset), settings)
   }
 
@@ -452,6 +467,21 @@ function drawContentBounds(
       handleSize,
     )
   })
+  const edgeHandleSize = handleSize * 0.72
+  const edges = [
+    [rect.centerX, rect.top],
+    [rect.centerX, rect.top + rect.height],
+    [rect.left, rect.centerY],
+    [rect.left + rect.width, rect.centerY],
+  ]
+  edges.forEach(([x, y]) => {
+    context.fillRect(
+      (x ?? 0) - edgeHandleSize / 2,
+      (y ?? 0) - edgeHandleSize / 2,
+      edgeHandleSize,
+      edgeHandleSize,
+    )
+  })
   context.restore()
 }
 
@@ -469,42 +499,92 @@ export function renderGraph(
   context.fillRect(0, 0, width, height)
   context.imageSmoothingEnabled = true
   context.imageSmoothingQuality = 'high'
-  if (options.templateBackground) {
+  if (
+    document.decoration.templateBackgroundVisible &&
+    options.templateBackground
+  ) {
     context.drawImage(options.templateBackground, 0, 0, width, height)
   }
-
   const template = getGraphTemplate(document.canvas.templateId)
-  if (template.showCanvasText) drawHeader(context, document)
   const layout = options.layout ?? createGraphLayout(document)
-  context.save()
-  rotateForContentBounds(context, document)
-  if (layout.roots.length === 0) {
-    drawEmptyState(context, document)
-  } else {
-    layout.roots.forEach((node) =>
-      drawNode(
+  const drawDataLayer = () => {
+    if (template.showCanvasText) drawHeader(context, document)
+    context.save()
+    rotateForContentBounds(context, document)
+    if (layout.roots.length === 0) {
+      drawEmptyState(context, document)
+    } else {
+      layout.roots.forEach((node) =>
+        drawNode(
+          context,
+          node,
+          assets,
+          options.selectedNodeId,
+          document,
+          width,
+          options.drawNodeText ?? true,
+        ),
+      )
+    }
+    context.restore()
+    if (options.drawProfileTemplate ?? true) {
+      drawProfileTemplate(
         context,
-        node,
+        document,
         assets,
-        options.selectedNodeId,
-        document.canvas.labelSettings,
-        width,
-        options.drawNodeText ?? true,
-      ),
-    )
+        options.profileTemplateAssets ?? {},
+      )
+    }
+    if (template.showCanvasText) drawFooter(context, document)
   }
-  context.restore()
-  drawProfileCustomTexts(context, document, options.selectedCustomTextId)
-  if (options.drawProfileTemplate ?? true) {
-    drawProfileTemplate(
-      context,
-      document,
-      assets,
-      options.profileTemplateAssets ?? {},
-    )
-  }
+  const hiddenLayers = new Set(document.decoration.hiddenLayerIds)
+  ;[
+    ...resolveDecorationLayerOrder(
+      document.decoration,
+      document.profile.customTexts.map((text) => text.id),
+    ),
+  ]
+    .reverse()
+    .forEach((layerId) => {
+      if (layerId === DECORATION_DATA_LAYER_ID) {
+        if (!hiddenLayers.has(layerId)) drawDataLayer()
+      } else {
+        const customTextId = customTextIdFromDecorationLayer(layerId)
+        if (customTextId) {
+          if (hiddenLayers.has(layerId)) return
+          const alimamaImage = options.alimamaProfileTextImages?.[customTextId]
+          if (alimamaImage) {
+            context.drawImage(alimamaImage, 0, 0, width, height)
+          }
+          drawProfileCustomText(
+            context,
+            document,
+            customTextId,
+            options.selectedCustomTextId,
+          )
+          return
+        }
+        drawDecorationLayer(
+          context,
+          document,
+          options.decorationPresetAssets ?? {},
+          assets,
+          layerId,
+        )
+      }
+    })
+  drawDecorationImageSelection(
+    context,
+    document,
+    assets,
+    options.selectedDecorationImageId,
+  )
+  drawDecorationFrameSelection(
+    context,
+    document,
+    options.selectedDecorationFrameId,
+  )
   if (options.showContentBounds) drawContentBounds(context, document)
-  if (template.showCanvasText) drawFooter(context, document)
   context.restore()
   return layout
 }
@@ -530,31 +610,69 @@ export async function downloadGraphPng(
   }
 
   await Promise.all([
-    ensureGraphFontLoaded(document.canvas.labelSettings),
+    ...document.categories.map((category) =>
+      ensureGraphFontLoaded(
+        resolveCategoryAppearance(category, document.canvas.labelSettings),
+      ),
+    ),
     ensureProfileFontsLoaded(document.profile),
   ])
-  const [templateBackground, profileTemplateAssets] = await Promise.all([
-    loadTemplateBackground(document.canvas.templateId),
-    loadProfileTemplateAssets(
-      document.profile.subTemplateId,
-      document.profile.gender,
-    ),
-  ])
-  const usesAlimama =
-    document.canvas.labelSettings.fontFamily === 'alimama-fangyuan'
+  const [templateBackground, profileTemplateAssets, decorationPresetAssets] =
+    await Promise.all([
+      loadTemplateBackground(document.canvas.templateId),
+      loadProfileTemplateAssets(
+        document.profile.subTemplateId,
+        document.profile.gender,
+      ),
+      loadDecorationPresetAssets(),
+    ])
+  const usesAlimama = document.categories.some(
+    (category) =>
+      resolveCategoryAppearance(category, document.canvas.labelSettings)
+        .fontFamily === 'alimama-fangyuan',
+  )
+  const usesProfileAlimama = document.profile.customTexts.some(
+    (text) => text.visible && text.fontFamily === 'alimama-fangyuan',
+  )
+  const dataLayerVisible = !document.decoration.hiddenLayerIds.includes(
+    DECORATION_DATA_LAYER_ID,
+  )
   const layout = createGraphLayout(document)
+  const alimamaProfileTextEntries = await Promise.all(
+    document.profile.customTexts
+      .filter((text) => text.visible && text.fontFamily === 'alimama-fangyuan')
+      .map(
+        async (text) =>
+          [
+            text.id,
+            await createAlimamaProfileTextImage(document, text.id),
+          ] as const,
+      ),
+  )
+  const alimamaProfileTextImages = Object.fromEntries(alimamaProfileTextEntries)
   renderGraph(context, document, assets, {
     templateBackground,
+    decorationPresetAssets,
     profileTemplateAssets,
     layout,
-    drawNodeText: !usesAlimama,
-    drawProfileTemplate: false,
+    drawNodeText: true,
+    drawProfileTemplate: true,
+    alimamaProfileTextImages,
   })
-  if (usesAlimama) {
+  if (dataLayerVisible && usesAlimama) {
     await drawAlimamaLabelsToCanvas(context, document, layout, assets)
   }
-  await drawAlimamaProfileTextsToCanvas(context, document)
-  drawProfileTemplate(context, document, assets, profileTemplateAssets)
+  if (dataLayerVisible) {
+    if (usesAlimama || usesProfileAlimama) {
+      drawDecorationLayersAboveData(
+        context,
+        document,
+        decorationPresetAssets,
+        assets,
+        { alimamaProfileTextImages },
+      )
+    }
+  }
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((value) => {
       if (value) resolve(value)

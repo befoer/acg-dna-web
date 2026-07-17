@@ -54,9 +54,11 @@ function wrapText(text: string, fontSize: number, maxWidth: number): string[] {
 
 export function createAlimamaProfileTextSpecs(
   document: GraphDocument,
+  customTextIds?: readonly string[],
 ): ProfileTextLineSpec[] {
   const scale = document.canvas.height / 800
   return [...document.profile.customTexts].reverse().flatMap((customText) => {
+    if (customTextIds && !customTextIds.includes(customText.id)) return []
     if (!customText.visible || customText.fontFamily !== 'alimama-fangyuan') {
       return []
     }
@@ -106,8 +108,9 @@ function escapeXml(value: string): string {
 export function createAlimamaProfileTextSvg(
   document: GraphDocument,
   fontDataUrl: string,
+  customTextIds?: readonly string[],
 ): string {
-  const lines = createAlimamaProfileTextSpecs(document)
+  const lines = createAlimamaProfileTextSpecs(document, customTextIds)
     .map((spec) => {
       const variation = resolveAlimamaVariation(spec.fontWeight, spec.roundness)
       const stroke =
@@ -187,6 +190,16 @@ function loadSvgImage(svg: string): Promise<HTMLImageElement> {
     }
     image.src = objectUrl
   })
+}
+
+export async function createAlimamaProfileTextImage(
+  document: GraphDocument,
+  customTextId: string,
+): Promise<HTMLImageElement> {
+  const fontDataUrl = await getAlimamaFontDataUrl()
+  return loadSvgImage(
+    createAlimamaProfileTextSvg(document, fontDataUrl, [customTextId]),
+  )
 }
 
 export async function drawAlimamaProfileTextsToCanvas(

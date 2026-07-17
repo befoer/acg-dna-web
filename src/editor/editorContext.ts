@@ -11,14 +11,17 @@ export interface ProjectExport {
 export interface EditorContextValue {
   state: EditorState
   dispatch: Dispatch<EditorAction>
-  attachImage: (nodeId: string, file: File) => Promise<void>
+  attachImage: (nodeId: string, file: File) => Promise<string | null>
   removeImage: (nodeId: string) => void
-  attachProfileAvatar: (file: File) => Promise<void>
+  attachProfileAvatar: (file: File) => Promise<string | null>
   removeProfileAvatar: () => void
+  attachDecorationImage: (file: File) => Promise<string | null>
+  removeDecorationImage: (imageId: string) => void
   removeNode: (nodeId: string) => void
   projects: ProjectSummary[]
   activeProjectId: string | null
   projectActionPending: boolean
+  retrySave: () => Promise<void>
   createProject: () => Promise<void>
   switchProject: (projectId: string) => Promise<void>
   duplicateProject: () => Promise<void>

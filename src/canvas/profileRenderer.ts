@@ -4,6 +4,7 @@ import type {
   GraphProfileLabel,
   GraphProfileLabelType,
 } from '../domain/graph'
+import { decorationCustomTextLayerId } from '../domain/graph'
 import {
   getProfileSubTemplate,
   isNicknameProfileSlot,
@@ -17,6 +18,7 @@ import {
   RESOURCE_ROUNDED_FAMILY,
 } from '../fonts/fontManager'
 import type { ProfileTemplateAssetMap } from './profileTemplateAssets'
+import { drawTransformedImageCover } from './imageTransform'
 
 type LocalImageAssetMap = Readonly<Record<string, LocalImageAsset>>
 
@@ -30,32 +32,6 @@ interface Rectangle {
 export interface ProfileCustomTextRegion extends Rectangle {
   id: string
   rotation: number
-}
-
-function drawImageCover(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  size: number,
-): void {
-  const sourceWidth = image.naturalWidth || image.width
-  const sourceHeight = image.naturalHeight || image.height
-  if (sourceWidth <= 0 || sourceHeight <= 0) return
-  const cropSize = Math.min(sourceWidth, sourceHeight)
-  const sourceX = (sourceWidth - cropSize) / 2
-  const sourceY = (sourceHeight - cropSize) / 2
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    cropSize,
-    cropSize,
-    x,
-    y,
-    size,
-    size,
-  )
 }
 
 function profileSlotFontFamily(fontName: string | undefined): string {
@@ -154,7 +130,15 @@ function drawTemplateAvatar(
       )
       context.clip()
     }
-    drawImageCover(context, avatar.image, avatarX, avatarY, avatarSize)
+    drawTransformedImageCover(
+      context,
+      avatar.image,
+      avatarX,
+      avatarY,
+      avatarSize,
+      avatarSize,
+      document.profile.avatarTransform,
+    )
     context.restore()
   }
   const drawFrame = () => {
@@ -435,7 +419,13 @@ export function createProfileCustomTextRegions(
   document: GraphDocument,
 ): ProfileCustomTextRegion[] {
   return document.profile.customTexts
-    .filter((customText) => customText.visible)
+    .filter(
+      (customText) =>
+        customText.visible &&
+        !document.decoration.hiddenLayerIds.includes(
+          decorationCustomTextLayerId(customText.id),
+        ),
+    )
     .map((customText) => customTextRegion(context, document, customText))
 }
 
@@ -447,7 +437,14 @@ function drawCustomTexts(
   const scale = document.canvas.height / 800
   const regions = createProfileCustomTextRegions(context, document)
   ;[...document.profile.customTexts].reverse().forEach((customText) => {
-    if (!customText.visible) return
+    if (
+      !customText.visible ||
+      document.decoration.hiddenLayerIds.includes(
+        decorationCustomTextLayerId(customText.id),
+      )
+    ) {
+      return
+    }
     const region = regions.find((candidate) => candidate.id === customText.id)
     if (!region) return
     const fontSize = customText.fontSize * scale
@@ -539,8 +536,11 @@ export function hitTestProfileCustomText(
   regions: readonly ProfileCustomTextRegion[],
   x: number,
   y: number,
+  orderedIds: readonly string[] = regions.map((region) => region.id),
 ): string | null {
-  for (const region of regions) {
+  for (const id of orderedIds) {
+    const region = regions.find((candidate) => candidate.id === id)
+    if (!region) continue
     const centerX = region.left + region.width / 2
     const centerY = region.top + region.height / 2
     const angle = (-region.rotation * Math.PI) / 180
@@ -566,6 +566,26 @@ export function drawProfileCustomTexts(
   selectedCustomTextId?: string | null,
 ): void {
   drawCustomTexts(context, document, selectedCustomTextId)
+}
+
+export function drawProfileCustomText(
+  context: CanvasRenderingContext2D,
+  document: GraphDocument,
+  customTextId: string,
+  selectedCustomTextId?: string | null,
+): void {
+  const customText = document.profile.customTexts.find(
+    (candidate) => candidate.id === customTextId,
+  )
+  if (!customText) return
+  drawCustomTexts(
+    context,
+    {
+      ...document,
+      profile: { ...document.profile, customTexts: [customText] },
+    },
+    selectedCustomTextId,
+  )
 }
 
 export function drawProfileTemplate(

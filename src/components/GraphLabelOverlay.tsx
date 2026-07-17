@@ -22,8 +22,9 @@ export function GraphLabelOverlay({
   assets,
   style,
 }: GraphLabelOverlayProps) {
-  const settings = document.canvas.labelSettings
-  const specs = createGraphLabelSpecs(layout, settings, assets)
+  const specs = createGraphLabelSpecs(document, layout, assets).filter(
+    (spec) => spec.fontFamily === 'alimama-fangyuan',
+  )
   const bounds = document.canvas.contentBounds
   const centerX = ((bounds.left + bounds.right) / 2) * document.canvas.width
   const centerY = ((bounds.top + bounds.bottom) / 2) * document.canvas.height
@@ -60,7 +61,7 @@ export function GraphLabelOverlay({
         {specs.map((spec) => {
           const variation = resolveAlimamaVariation(
             spec.fontWeight,
-            settings.fontRoundness,
+            spec.fontRoundness,
           )
           return (
             <text

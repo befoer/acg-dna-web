@@ -14,6 +14,7 @@ function node(
     id,
     name: id,
     kind: children.length > 0 ? 'attribute' : 'subAttribute',
+    categoryId: 'category-test',
     value: 50,
     color: '#15B8A6',
     x,

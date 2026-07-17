@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react'
+import { useState, type ChangeEvent } from 'react'
 
 import {
   createEntityId,
@@ -16,6 +16,7 @@ import {
   type ProfileSubTemplate,
 } from '../domain/profileTemplates'
 import { useEditor } from '../editor/editorContext'
+import { LocalImageEditor } from './LocalImageEditor'
 
 function labelTypeForSlot(type: string): GraphProfileLabelType | null {
   const normalized = type.toLowerCase()
@@ -293,6 +294,12 @@ export function ProfilePanel() {
   const currentTemplate = profile.subTemplateId
     ? getProfileSubTemplate(profile.subTemplateId)
     : undefined
+  const [imageEditorAssetId, setImageEditorAssetId] = useState<string | null>(
+    null,
+  )
+  const editorAvatar = imageEditorAssetId
+    ? state.assets[imageEditorAssetId]
+    : undefined
 
   const update = (
     patch: Partial<GraphProfileSettings>,
@@ -309,7 +316,11 @@ export function ProfilePanel() {
   const handleAvatar = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
-    if (file) void attachProfileAvatar(file)
+    if (file) {
+      void attachProfileAvatar(file).then((assetId) => {
+        if (assetId) setImageEditorAssetId(assetId)
+      })
+    }
   }
 
   const selectTemplate = (template: ProfileSubTemplate): void => {
@@ -403,264 +414,299 @@ export function ProfilePanel() {
   }
 
   return (
-    <div className={'profile-panel-content'} aria-label={'资料面板'}>
-      <div className={'panel-header'}>
-        <div>
-          <p className={'panel-eyebrow'}>PROFILE</p>
-          <h2>资料</h2>
-        </div>
-      </div>
-      <p className={'panel-note'}>
-        完整复刻 APP 创作页资料构图；头像只从本地选择，不连接个人账号。
-      </p>
-
-      <section className={'profile-section'} aria-label={'资料模板'}>
-        <div className={'profile-section-title'}>
-          <span>⌄</span>
-          <h3>模板</h3>
-          <small>· {subTemplates.length}</small>
-        </div>
-        {subTemplates.length > 0 ? (
-          <div className={'profile-template-list'}>
-            {subTemplates.map((template) => {
-              const selected = profile.subTemplateId === template.id
-              return (
-                <button
-                  type={'button'}
-                  key={template.id}
-                  className={
-                    'profile-template-card' + (selected ? ' is-selected' : '')
-                  }
-                  aria-pressed={selected}
-                  onClick={() => selectTemplate(template)}
-                >
-                  <span className={'profile-template-preview'}>
-                    <img
-                      src={getProfileTemplatePreviewUrl(template.id)}
-                      alt={''}
-                    />
-                    {selected ? <b aria-hidden={true}>✓</b> : null}
-                  </span>
-                  <span>{template.name}</span>
-                </button>
-              )
-            })}
+    <>
+      <div className={'profile-panel-content'} aria-label={'资料面板'}>
+        <div className={'panel-header'}>
+          <div>
+            <p className={'panel-eyebrow'}>PROFILE</p>
+            <h2>资料</h2>
           </div>
-        ) : (
-          <p className={'profile-empty-note'}>
-            经典画布没有 APP 资料子模板，请先选择“可爱日记”或“工业风”。
-          </p>
-        )}
-      </section>
+        </div>
+        <p className={'panel-note'}>
+          完整复刻 APP 创作页资料构图；头像只从本地选择，不连接个人账号。
+        </p>
 
-      <section className={'profile-section'} aria-label={'头像与昵称'}>
-        <div className={'profile-section-title'}>
-          <span>⌄</span>
-          <h3>头像与昵称</h3>
-        </div>
-        <div className={'profile-avatar-editor'}>
-          <VisibilityButton
-            visible={profile.avatarVisible}
-            label={profile.avatarVisible ? '隐藏头像' : '显示头像'}
-            onClick={() => update({ avatarVisible: !profile.avatarVisible })}
-          />
-          <label className={'profile-avatar-preview'} title={'从本地选择头像'}>
-            {avatar ? <img src={avatar.objectUrl} alt={''} /> : <span>＋</span>}
-            <input
-              type={'file'}
-              accept={'image/png,image/jpeg,image/webp,image/avif'}
-              aria-label={'选择资料头像'}
-              onChange={handleAvatar}
-            />
-          </label>
-          <div className={'profile-gender-selector'} aria-label={'性别'}>
-            {[
-              ['male', '♂', '男'],
-              ['female', '♀', '女'],
-              ['none', '∅', '无'],
-            ].map(([gender, symbol, label]) => (
-              <button
-                type={'button'}
-                key={gender}
-                className={profile.gender === gender ? 'is-selected' : ''}
-                aria-label={'性别：' + label}
-                aria-pressed={profile.gender === gender}
-                onClick={() =>
-                  update({
-                    gender: gender as GraphProfileSettings['gender'],
-                  })
-                }
-              >
-                {symbol}
-              </button>
-            ))}
-          </div>
-          {avatar ? (
-            <button
-              type={'button'}
-              className={'profile-remove-avatar'}
-              onClick={removeProfileAvatar}
-            >
-              移除
-            </button>
-          ) : null}
-        </div>
-        <div className={'profile-nickname-row'}>
-          <VisibilityButton
-            visible={profile.nicknameVisible}
-            label={profile.nicknameVisible ? '隐藏昵称' : '显示昵称'}
-            onClick={() =>
-              update({ nicknameVisible: !profile.nicknameVisible })
-            }
-          />
-          <input
-            type={'text'}
-            aria-label={'资料昵称'}
-            maxLength={12}
-            placeholder={'输入昵称'}
-            value={profile.nickname}
-            onChange={(event) =>
-              update({ nickname: event.currentTarget.value }, 'nickname')
-            }
-            onBlur={(event) => {
-              if (!event.currentTarget.value.trim()) {
-                update({ nickname: '我的昵称' })
-              }
-            }}
-          />
-          <small>{profile.nickname.length}/12</small>
-        </div>
-      </section>
-
-      {currentTemplate ? (
-        <section className={'profile-section'} aria-label={'资料标签'}>
+        <section className={'profile-section'} aria-label={'资料模板'}>
           <div className={'profile-section-title'}>
             <span>⌄</span>
-            <h3>标签</h3>
-            <small>
-              {visibleLabelCount}/{maximumLabels}
-            </small>
-            <button
-              type={'button'}
-              className={'profile-add-button'}
-              aria-label={'增加资料标签'}
-              disabled={visibleLabelCount >= maximumLabels}
-              onClick={addLabel}
-            >
-              ＋
-            </button>
+            <h3>模板</h3>
+            <small>· {subTemplates.length}</small>
           </div>
-          <div className={'profile-label-list'}>
-            {labels.slice(0, visibleLabelCount).map((label, index) => (
-              <label className={'profile-label-row'} key={label.id}>
-                <span>标签 {index + 1}</span>
-                <input
-                  type={'text'}
-                  maxLength={8}
-                  aria-label={'资料标签 ' + (index + 1)}
-                  placeholder={'输入标签'}
-                  value={label.content}
-                  onChange={(event) =>
-                    update(
-                      {
-                        labels: profile.labels.map((candidate) =>
-                          candidate.id === label.id
-                            ? {
-                                ...candidate,
-                                content: event.currentTarget.value,
-                              }
-                            : candidate,
-                        ),
-                      },
-                      'label:' + label.id,
-                    )
-                  }
-                />
-                <small>{label.content.length}/8</small>
+          {subTemplates.length > 0 ? (
+            <div className={'profile-template-list'}>
+              {subTemplates.map((template) => {
+                const selected = profile.subTemplateId === template.id
+                return (
+                  <button
+                    type={'button'}
+                    key={template.id}
+                    className={
+                      'profile-template-card' + (selected ? ' is-selected' : '')
+                    }
+                    aria-pressed={selected}
+                    onClick={() => selectTemplate(template)}
+                  >
+                    <span className={'profile-template-preview'}>
+                      <img
+                        src={getProfileTemplatePreviewUrl(template.id)}
+                        alt={''}
+                      />
+                      {selected ? <b aria-hidden={true}>✓</b> : null}
+                    </span>
+                    <span>{template.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <p className={'profile-empty-note'}>
+              经典画布没有 APP 资料子模板，请先选择“可爱日记”或“工业风”。
+            </p>
+          )}
+        </section>
+
+        <section className={'profile-section'} aria-label={'头像与昵称'}>
+          <div className={'profile-section-title'}>
+            <span>⌄</span>
+            <h3>头像与昵称</h3>
+          </div>
+          <div className={'profile-avatar-editor'}>
+            <VisibilityButton
+              visible={profile.avatarVisible}
+              label={profile.avatarVisible ? '隐藏头像' : '显示头像'}
+              onClick={() => update({ avatarVisible: !profile.avatarVisible })}
+            />
+            <label
+              className={'profile-avatar-preview'}
+              title={'从本地选择头像'}
+            >
+              {avatar ? (
+                <img src={avatar.objectUrl} alt={''} />
+              ) : (
+                <span>＋</span>
+              )}
+              <input
+                type={'file'}
+                accept={'image/png,image/jpeg,image/webp,image/avif'}
+                aria-label={'选择资料头像'}
+                onChange={handleAvatar}
+              />
+            </label>
+            <div className={'profile-gender-selector'} aria-label={'性别'}>
+              {[
+                ['male', '♂', '男'],
+                ['female', '♀', '女'],
+                ['none', '∅', '无'],
+              ].map(([gender, symbol, label]) => (
                 <button
                   type={'button'}
-                  aria-label={'删除资料标签 ' + (index + 1)}
-                  onClick={() => deleteLabel(index)}
+                  key={gender}
+                  className={profile.gender === gender ? 'is-selected' : ''}
+                  aria-label={'性别：' + label}
+                  aria-pressed={profile.gender === gender}
+                  onClick={() =>
+                    update({
+                      gender: gender as GraphProfileSettings['gender'],
+                    })
+                  }
                 >
-                  ×
+                  {symbol}
                 </button>
-              </label>
+              ))}
+            </div>
+            {avatar ? (
+              <button
+                type={'button'}
+                className={'profile-remove-avatar'}
+                onClick={() => setImageEditorAssetId(avatar.id)}
+              >
+                调整
+              </button>
+            ) : null}
+            {avatar ? (
+              <button
+                type={'button'}
+                className={'profile-remove-avatar'}
+                onClick={removeProfileAvatar}
+              >
+                移除
+              </button>
+            ) : null}
+          </div>
+          <div className={'profile-nickname-row'}>
+            <VisibilityButton
+              visible={profile.nicknameVisible}
+              label={profile.nicknameVisible ? '隐藏昵称' : '显示昵称'}
+              onClick={() =>
+                update({ nicknameVisible: !profile.nicknameVisible })
+              }
+            />
+            <input
+              type={'text'}
+              aria-label={'资料昵称'}
+              maxLength={12}
+              placeholder={'输入昵称'}
+              value={profile.nickname}
+              onChange={(event) =>
+                update({ nickname: event.currentTarget.value }, 'nickname')
+              }
+              onBlur={(event) => {
+                if (!event.currentTarget.value.trim()) {
+                  update({ nickname: '我的昵称' })
+                }
+              }}
+            />
+            <small>{profile.nickname.length}/12</small>
+          </div>
+        </section>
+
+        {currentTemplate ? (
+          <section className={'profile-section'} aria-label={'资料标签'}>
+            <div className={'profile-section-title'}>
+              <span>⌄</span>
+              <h3>标签</h3>
+              <small>
+                {visibleLabelCount}/{maximumLabels}
+              </small>
+              <button
+                type={'button'}
+                className={'profile-add-button'}
+                aria-label={'增加资料标签'}
+                disabled={visibleLabelCount >= maximumLabels}
+                onClick={addLabel}
+              >
+                ＋
+              </button>
+            </div>
+            <div className={'profile-label-list'}>
+              {labels.slice(0, visibleLabelCount).map((label, index) => (
+                <label className={'profile-label-row'} key={label.id}>
+                  <span>标签 {index + 1}</span>
+                  <input
+                    type={'text'}
+                    maxLength={8}
+                    aria-label={'资料标签 ' + (index + 1)}
+                    placeholder={'输入标签'}
+                    value={label.content}
+                    onChange={(event) =>
+                      update(
+                        {
+                          labels: profile.labels.map((candidate) =>
+                            candidate.id === label.id
+                              ? {
+                                  ...candidate,
+                                  content: event.currentTarget.value,
+                                }
+                              : candidate,
+                          ),
+                        },
+                        'label:' + label.id,
+                      )
+                    }
+                  />
+                  <small>{label.content.length}/8</small>
+                  <button
+                    type={'button'}
+                    aria-label={'删除资料标签 ' + (index + 1)}
+                    onClick={() => deleteLabel(index)}
+                  >
+                    ×
+                  </button>
+                </label>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {currentTemplate?.textSlots.length ? (
+          <section className={'profile-section'} aria-label={'资料文本块'}>
+            <div className={'profile-section-title'}>
+              <VisibilityButton
+                visible={profile.textBlockVisible}
+                label={
+                  profile.textBlockVisible ? '隐藏资料文本' : '显示资料文本'
+                }
+                onClick={() =>
+                  update({ textBlockVisible: !profile.textBlockVisible })
+                }
+              />
+              <h3>文本</h3>
+            </div>
+            <textarea
+              aria-label={'资料文本内容'}
+              maxLength={80}
+              rows={5}
+              placeholder={'输入文本内容'}
+              value={profile.textBlockContent}
+              onChange={(event) =>
+                update(
+                  { textBlockContent: event.currentTarget.value },
+                  'text-block',
+                )
+              }
+            />
+            <small className={'profile-character-count'}>
+              {profile.textBlockContent.length}/80
+            </small>
+          </section>
+        ) : null}
+
+        <section className={'profile-section'} aria-label={'自定义文字'}>
+          <div className={'profile-section-title'}>
+            <span>⌄</span>
+            <h3>自定义文字</h3>
+            <small>画布中可拖动</small>
+          </div>
+          <div className={'profile-custom-text-list'}>
+            {profile.customTexts.map((text) => (
+              <CustomTextCard
+                key={text.id}
+                text={text}
+                expanded={state.editingCustomTextId === text.id}
+                onSelect={() =>
+                  dispatch({
+                    type: 'custom-text-selected',
+                    textId:
+                      state.editingCustomTextId === text.id ? null : text.id,
+                  })
+                }
+                onUpdate={(patch, group) =>
+                  updateCustomText(text.id, patch, group)
+                }
+                onDelete={() =>
+                  update({
+                    customTexts: profile.customTexts.filter(
+                      (candidate) => candidate.id !== text.id,
+                    ),
+                  })
+                }
+              />
             ))}
           </div>
+          <button
+            type={'button'}
+            className={'profile-add-text-button'}
+            onClick={addCustomText}
+          >
+            ＋ 添加文字
+          </button>
         </section>
+      </div>
+      {editorAvatar && editorAvatar.id === profile.avatarAssetId ? (
+        <LocalImageEditor
+          asset={editorAvatar}
+          initialTransform={profile.avatarTransform}
+          cropShape={
+            currentTemplate?.avatarShape === 'square' ? 'square' : 'circle'
+          }
+          title={'调整资料头像'}
+          onCancel={() => setImageEditorAssetId(null)}
+          onApply={(avatarTransform) => {
+            update({ avatarTransform })
+            setImageEditorAssetId(null)
+          }}
+        />
       ) : null}
-
-      {currentTemplate?.textSlots.length ? (
-        <section className={'profile-section'} aria-label={'资料文本块'}>
-          <div className={'profile-section-title'}>
-            <VisibilityButton
-              visible={profile.textBlockVisible}
-              label={profile.textBlockVisible ? '隐藏资料文本' : '显示资料文本'}
-              onClick={() =>
-                update({ textBlockVisible: !profile.textBlockVisible })
-              }
-            />
-            <h3>文本</h3>
-          </div>
-          <textarea
-            aria-label={'资料文本内容'}
-            maxLength={80}
-            rows={5}
-            placeholder={'输入文本内容'}
-            value={profile.textBlockContent}
-            onChange={(event) =>
-              update(
-                { textBlockContent: event.currentTarget.value },
-                'text-block',
-              )
-            }
-          />
-          <small className={'profile-character-count'}>
-            {profile.textBlockContent.length}/80
-          </small>
-        </section>
-      ) : null}
-
-      <section className={'profile-section'} aria-label={'自定义文字'}>
-        <div className={'profile-section-title'}>
-          <span>⌄</span>
-          <h3>自定义文字</h3>
-          <small>画布中可拖动</small>
-        </div>
-        <div className={'profile-custom-text-list'}>
-          {profile.customTexts.map((text) => (
-            <CustomTextCard
-              key={text.id}
-              text={text}
-              expanded={state.editingCustomTextId === text.id}
-              onSelect={() =>
-                dispatch({
-                  type: 'custom-text-selected',
-                  textId:
-                    state.editingCustomTextId === text.id ? null : text.id,
-                })
-              }
-              onUpdate={(patch, group) =>
-                updateCustomText(text.id, patch, group)
-              }
-              onDelete={() =>
-                update({
-                  customTexts: profile.customTexts.filter(
-                    (candidate) => candidate.id !== text.id,
-                  ),
-                })
-              }
-            />
-          ))}
-        </div>
-        <button
-          type={'button'}
-          className={'profile-add-text-button'}
-          onClick={addCustomText}
-        >
-          ＋ 添加文字
-        </button>
-      </section>
-    </div>
+    </>
   )
 }

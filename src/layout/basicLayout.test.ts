@@ -123,6 +123,47 @@ describe('basic deterministic layout', () => {
     )
   })
 
+  it('applies a category fill factor without changing sibling settings', () => {
+    const normal = createStarterGraph('2026-07-15T00:00:00.000Z')
+    const enlarged = createStarterGraph('2026-07-15T00:00:00.000Z')
+    enlarged.categories[0]!.appearance = { fillFactor: 1.5 }
+    const normalRoots = new Map(
+      createBasicLayout(normal).roots.map((node) => [node.id, node]),
+    )
+    const enlargedRoots = new Map(
+      createBasicLayout(enlarged).roots.map((node) => [node.id, node]),
+    )
+    const normalRatio =
+      normalRoots.get('category-animation')!.radius /
+      normalRoots.get('category-character')!.radius
+    const enlargedRatio =
+      enlargedRoots.get('category-animation')!.radius /
+      enlargedRoots.get('category-character')!.radius
+
+    expect(enlargedRatio).toBeGreaterThan(normalRatio)
+    expect(enlargedRoots.get('category-animation')?.categoryId).toBe(
+      'category-animation',
+    )
+    expect(
+      enlargedRoots.get('category-animation')?.children[0]?.categoryId,
+    ).toBe('category-animation')
+  })
+
+  it('removes category circles in flat mode while keeping attributes and children', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    document.canvas.labelSettings.showCategoryNodes = false
+    const layout = createBasicLayout(document)
+
+    expect(layout.roots.every((node) => node.kind === 'attribute')).toBe(true)
+    expect(layout.flatNodes.some((node) => node.kind === 'category')).toBe(
+      false,
+    )
+    expect(layout.roots.map((node) => node.id)).toContain('attribute-story')
+    expect(
+      layout.flatNodes.find((node) => node.id === 'sub-world')?.categoryId,
+    ).toBe('category-animation')
+  })
+
   it('uses a locale-independent tie break for equal weights', () => {
     const document = createStarterGraph('2026-07-15T00:00:00.000Z')
     const ids = ['é', '中', 'Z']

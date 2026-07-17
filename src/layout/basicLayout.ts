@@ -2,20 +2,25 @@ import type {
   GraphAttribute,
   GraphCategory,
   GraphDocument,
+  GraphImageTransform,
+  GraphLabelSettings,
   GraphNodeKind,
   GraphSubAttribute,
 } from '../domain/graph'
+import { resolveCategoryAppearance } from '../domain/graph'
 
 export interface LayoutNode {
   id: string
   name: string
   kind: GraphNodeKind
+  categoryId: string
   value: number
   color: string
   x: number
   y: number
   radius: number
   imageAssetId?: string
+  imageTransform?: GraphImageTransform
   children: LayoutNode[]
 }
 
@@ -38,18 +43,21 @@ interface PackedNode {
   id: string
   name: string
   kind: GraphNodeKind
+  categoryId: string
   value: number
   color: string
   radius: number
   x: number
   y: number
   imageAssetId?: string
+  imageTransform?: GraphImageTransform
   children: PackedNode[]
 }
 
 const TAU = Math.PI * 2
 const ANGLE_STEPS = 48
 const EPSILON = 0.0001
+const FLAT_MODE_ITEM_VALUE_EXPONENT = 1.35
 
 function compareIds(left: string, right: string): number {
   if (left === right) return 0
@@ -190,9 +198,13 @@ function packSiblings(nodes: PackedNode[], padding: number): number {
 function withOptionalImage<T extends PackedNode>(
   node: T,
   imageAssetId: string | undefined,
+  imageTransform: GraphImageTransform | undefined,
 ): T {
   if (imageAssetId) {
     node.imageAssetId = imageAssetId
+  }
+  if (imageTransform) {
+    node.imageTransform = { ...imageTransform }
   }
   return node
 }
@@ -216,12 +228,17 @@ function fitChildrenInsideParent(
   children.forEach((child) => scalePackedNode(child, factor))
 }
 
-function buildSubAttribute(node: GraphSubAttribute, color: string): PackedNode {
+function buildSubAttribute(
+  node: GraphSubAttribute,
+  color: string,
+  categoryId: string,
+): PackedNode {
   return withOptionalImage(
     {
       id: node.id,
       name: node.name,
       kind: 'subAttribute',
+      categoryId,
       value: node.value,
       color,
       radius: leafRadius(node.value),
@@ -230,14 +247,19 @@ function buildSubAttribute(node: GraphSubAttribute, color: string): PackedNode {
       children: [],
     },
     node.imageAssetId,
+    node.imageTransform,
   )
 }
 
-function buildAttribute(node: GraphAttribute, color: string): PackedNode {
+function buildAttribute(
+  node: GraphAttribute,
+  color: string,
+  categoryId: string,
+): PackedNode {
   const children = node.children
     .filter((child) => !child.hidden)
     .sort(compareByValueThenId)
-    .map((child) => buildSubAttribute(child, color))
+    .map((child) => buildSubAttribute(child, color, categoryId))
   const contentRadius = packSiblings(children, 9)
   const radius = containerRadius(node.value, 'attribute')
   fitChildrenInsideParent(children, contentRadius, radius, 22)
@@ -247,6 +269,7 @@ function buildAttribute(node: GraphAttribute, color: string): PackedNode {
       id: node.id,
       name: node.name,
       kind: 'attribute',
+      categoryId,
       value: node.value,
       color,
       radius,
@@ -255,16 +278,22 @@ function buildAttribute(node: GraphAttribute, color: string): PackedNode {
       children,
     },
     node.imageAssetId,
+    node.imageTransform,
   )
 }
 
-function buildCategory(node: GraphCategory): PackedNode {
+function buildCategory(
+  node: GraphCategory,
+  globalSettings: GraphLabelSettings,
+): PackedNode {
   const children = node.attributes
     .filter((attribute) => !attribute.hidden)
     .sort(compareByValueThenId)
-    .map((attribute) => buildAttribute(attribute, node.color))
+    .map((attribute) => buildAttribute(attribute, node.color, node.id))
   const contentRadius = packSiblings(children, 14)
-  const radius = containerRadius(node.value, 'category')
+  const radius =
+    containerRadius(node.value, 'category') *
+    resolveCategoryAppearance(node, globalSettings).fillFactor
   fitChildrenInsideParent(children, contentRadius, radius, 34)
 
   return withOptionalImage(
@@ -272,6 +301,7 @@ function buildCategory(node: GraphCategory): PackedNode {
       id: node.id,
       name: node.name,
       kind: 'category',
+      categoryId: node.id,
       value: node.value,
       color: node.color,
       radius,
@@ -280,7 +310,29 @@ function buildCategory(node: GraphCategory): PackedNode {
       children,
     },
     node.imageAssetId,
+    node.imageTransform,
   )
+}
+
+function buildFlatAttribute(
+  node: GraphAttribute,
+  category: GraphCategory,
+  globalSettings: GraphLabelSettings,
+): PackedNode {
+  const amplifiedValue = Math.pow(
+    Math.max(1, node.value),
+    FLAT_MODE_ITEM_VALUE_EXPONENT,
+  )
+  const packed = buildAttribute(
+    { ...node, value: amplifiedValue },
+    category.color,
+    category.id,
+  )
+  scalePackedNode(
+    packed,
+    resolveCategoryAppearance(category, globalSettings).fillFactor,
+  )
+  return packed
 }
 
 function placeNode(
@@ -296,6 +348,7 @@ function placeNode(
     id: node.id,
     name: node.name,
     kind: node.kind,
+    categoryId: node.categoryId,
     value: node.value,
     color: node.color,
     x,
@@ -305,6 +358,9 @@ function placeNode(
   }
   if (node.imageAssetId) {
     placed.imageAssetId = node.imageAssetId
+  }
+  if (node.imageTransform) {
+    placed.imageTransform = { ...node.imageTransform }
   }
   return placed
 }
@@ -328,10 +384,25 @@ export function createBasicLayout(
   const availableWidth = Math.max(1, width - horizontalPadding * 2)
   const availableHeight = Math.max(1, height - topInset - bottomInset)
 
-  const packedRoots = document.categories
+  const visibleCategories = document.categories
     .filter((category) => !category.hidden)
     .sort(compareByValueThenId)
-    .map(buildCategory)
+  const packedRoots = document.canvas.labelSettings.showCategoryNodes
+    ? visibleCategories.map((category) =>
+        buildCategory(category, document.canvas.labelSettings),
+      )
+    : visibleCategories.flatMap((category) =>
+        category.attributes
+          .filter((attribute) => !attribute.hidden)
+          .sort(compareByValueThenId)
+          .map((attribute) =>
+            buildFlatAttribute(
+              attribute,
+              category,
+              document.canvas.labelSettings,
+            ),
+          ),
+      )
 
   if (packedRoots.length === 0) {
     return { width, height, roots: [], flatNodes: [] }

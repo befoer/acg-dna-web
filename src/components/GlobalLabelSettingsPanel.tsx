@@ -67,6 +67,11 @@ export function GlobalLabelSettingsPanel({
 
   const toggleOptions = [
     {
+      key: 'showCategoryNodes' as const,
+      label: '分类显示',
+      checked: settings.showCategoryNodes,
+    },
+    {
       key: 'showCategoryText' as const,
       label: '分类文字',
       checked: settings.showCategoryText,

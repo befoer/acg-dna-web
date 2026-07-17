@@ -1,4 +1,9 @@
-import type { GraphDocument, GraphLabelSettings } from '../domain/graph'
+import {
+  resolveCategoryAppearance,
+  type GraphDocument,
+  type GraphLabelFontFamily,
+  type GraphLabelSettings,
+} from '../domain/graph'
 import type { LocalImageAsset } from '../editor/assets'
 import {
   ALIMAMA_FANGYUAN_FAMILY,
@@ -16,6 +21,8 @@ export interface GraphLabelSpec {
   y: number
   fontSize: number
   fontWeight: number
+  fontFamily: GraphLabelFontFamily
+  fontRoundness: number
   color: string
   opacity: number
   textLength?: number
@@ -76,12 +83,18 @@ function splitLabelText(text: string, maxWidth: number, fontSize: number) {
 function appendNodeSpecs(
   specs: GraphLabelSpec[],
   node: LayoutNode,
-  settings: GraphLabelSettings,
+  document: GraphDocument,
   assets: LocalImageAssetMap,
 ): void {
   node.children.forEach((child) =>
-    appendNodeSpecs(specs, child, settings, assets),
+    appendNodeSpecs(specs, child, document, assets),
   )
+  const category = document.categories.find(
+    (item) => item.id === node.categoryId,
+  )
+  const settings: GraphLabelSettings = category
+    ? resolveCategoryAppearance(category, document.canvas.labelSettings)
+    : document.canvas.labelSettings
   const showText =
     node.kind === 'category'
       ? settings.showCategoryText
@@ -89,7 +102,15 @@ function appendNodeSpecs(
   if (!showText) return
 
   const hasImage =
-    settings.showImages &&
+    (node.kind === 'category'
+      ? category
+        ? resolveCategoryAppearance(category, document.canvas.labelSettings)
+            .showCategoryImage
+        : settings.showImages
+      : category
+        ? resolveCategoryAppearance(category, document.canvas.labelSettings)
+            .showLabelImages
+        : settings.showImages) &&
     Boolean(node.imageAssetId && assets[node.imageAssetId])
   const fontSize = graphNodeFontSize(node)
   const color = settings.textColorOverride ?? (hasImage ? '#FFFFFF' : '#242429')
@@ -109,6 +130,8 @@ function appendNodeSpecs(
       y: startY + index * fontSize * 1.1,
       fontSize,
       fontWeight: settings.fontWeight,
+      fontFamily: settings.fontFamily,
+      fontRoundness: settings.fontRoundness,
       color,
       opacity: 1,
       ...(estimatedWidth > maxWidth ? { textLength: maxWidth } : {}),
@@ -125,6 +148,8 @@ function appendNodeSpecs(
       y: startY + lines.length * fontSize * 1.04,
       fontSize: valueFontSize,
       fontWeight: Math.max(300, settings.fontWeight - 100),
+      fontFamily: settings.fontFamily,
+      fontRoundness: settings.fontRoundness,
       color,
       opacity: 0.82,
       shadow: hasImage,
@@ -133,12 +158,12 @@ function appendNodeSpecs(
 }
 
 export function createGraphLabelSpecs(
+  document: GraphDocument,
   layout: BasicLayoutResult,
-  settings: GraphLabelSettings,
   assets: LocalImageAssetMap,
 ): GraphLabelSpec[] {
   const specs: GraphLabelSpec[] = []
-  layout.roots.forEach((node) => appendNodeSpecs(specs, node, settings, assets))
+  layout.roots.forEach((node) => appendNodeSpecs(specs, node, document, assets))
   return specs
 }
 
@@ -157,8 +182,9 @@ export function createAlimamaLabelSvg(
   assets: LocalImageAssetMap,
   fontDataUrl: string,
 ): string {
-  const settings = document.canvas.labelSettings
-  const specs = createGraphLabelSpecs(layout, settings, assets)
+  const specs = createGraphLabelSpecs(document, layout, assets).filter(
+    (spec) => spec.fontFamily === 'alimama-fangyuan',
+  )
   const bounds = document.canvas.contentBounds
   const centerX = ((bounds.left + bounds.right) / 2) * document.canvas.width
   const centerY = ((bounds.top + bounds.bottom) / 2) * document.canvas.height
@@ -176,7 +202,7 @@ export function createAlimamaLabelSvg(
     .map((spec) => {
       const variation = resolveAlimamaVariation(
         spec.fontWeight,
-        settings.fontRoundness,
+        spec.fontRoundness,
       )
       const textLength =
         spec.textLength === undefined

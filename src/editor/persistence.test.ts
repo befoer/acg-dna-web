@@ -171,6 +171,35 @@ describe('IndexedDB project library', () => {
     )
     await repository.close()
   })
+
+  it('removes image blobs no longer present in the saved project', async () => {
+    const factory = new IDBFactory()
+    const repository = new IndexedDbProjectRepository(
+      factory,
+      'project-asset-cleanup',
+    )
+    const snapshot = storedSnapshot(
+      'graph-cleanup',
+      '图片清理',
+      'asset-orphan',
+      '2026-07-16T05:00:00.000Z',
+    )
+    await repository.saveProject(snapshot.document.id, snapshot)
+
+    const withoutImage = {
+      ...snapshot,
+      document: createStarterGraph('2026-07-16T06:00:00.000Z'),
+      assets: [],
+      savedAt: '2026-07-16T06:00:00.000Z',
+    }
+    withoutImage.document.id = snapshot.document.id
+    await repository.saveProject(snapshot.document.id, withoutImage)
+
+    expect(
+      (await repository.loadProject(snapshot.document.id))?.assets,
+    ).toEqual([])
+    await repository.close()
+  })
 })
 
 describe('IndexedDB legacy migration', () => {

@@ -1,8 +1,12 @@
 import type {
   GraphAttribute,
   GraphCategory,
+  GraphCategoryAppearance,
   GraphContentBounds,
   GraphDocument,
+  GraphDecorationSettings,
+  GraphDecorationImage,
+  GraphImageTransform,
   GraphLabelSettings,
   GraphLayoutMode,
   GraphNode,
@@ -10,7 +14,13 @@ import type {
   GraphSubAttribute,
   GraphTemplateId,
 } from '../domain/graph'
-import { createStarterGraph, findGraphNode } from '../domain/graph'
+import {
+  DEFAULT_IMAGE_TRANSFORM,
+  createStarterGraph,
+  decorationImageLayerId,
+  findGraphNode,
+  resolveDecorationLayerOrder,
+} from '../domain/graph'
 import { getDefaultProfileSubTemplateId } from '../domain/profileTemplates'
 import { getGraphTemplate } from '../domain/templates'
 import type { LocalImageAsset } from './assets'
@@ -19,6 +29,8 @@ export interface EditorState {
   document: GraphDocument
   selectedNodeId: string | null
   editingCustomTextId: string | null
+  editingDecorationImageId: string | null
+  editingDecorationFrameId: string | null
   assets: Record<string, LocalImageAsset>
   statusMessage: string
   revision: number
@@ -39,6 +51,8 @@ export interface EditorHistorySnapshot {
   document: GraphDocument
   selectedNodeId: string | null
   editingCustomTextId: string | null
+  editingDecorationImageId: string | null
+  editingDecorationFrameId: string | null
   assets: Record<string, LocalImageAsset>
 }
 
@@ -54,11 +68,13 @@ export interface GraphNodePatch {
   value?: number
   hidden?: boolean
   color?: string
+  imageTransform?: GraphImageTransform
 }
 
 export type EditorAction =
   | { type: 'document-renamed'; name: string; at: string }
   | { type: 'background-changed'; color: string; at: string }
+  | { type: 'canvas-size-changed'; width: number; height: number; at: string }
   | { type: 'layout-mode-changed'; mode: GraphLayoutMode; at: string }
   | { type: 'template-applied'; templateId: GraphTemplateId; at: string }
   | {
@@ -80,8 +96,30 @@ export type EditorAction =
       at: string
     }
   | { type: 'custom-text-selected'; textId: string | null }
+  | { type: 'decoration-image-selected'; imageId: string | null }
+  | { type: 'decoration-frame-selected'; frameId: string | null }
   | { type: 'node-selected'; nodeId: string | null }
   | { type: 'node-updated'; nodeId: string; patch: GraphNodePatch; at: string }
+  | {
+      type: 'node-moved'
+      nodeId: string
+      direction: 'up' | 'down'
+      at: string
+    }
+  | {
+      type: 'category-appearance-changed'
+      categoryId: string
+      patch: GraphCategoryAppearance
+      group?: string
+      at: string
+    }
+  | { type: 'category-appearance-reset'; categoryId: string; at: string }
+  | {
+      type: 'graph-text-imported'
+      categories: GraphCategory[]
+      mode: 'replace' | 'append'
+      at: string
+    }
   | { type: 'category-added'; category: GraphCategory; at: string }
   | {
       type: 'attribute-added'
@@ -90,9 +128,21 @@ export type EditorAction =
       at: string
     }
   | {
+      type: 'attributes-added'
+      categoryId: string
+      attributes: GraphAttribute[]
+      at: string
+    }
+  | {
       type: 'sub-attribute-added'
       attributeId: string
       child: GraphSubAttribute
+      at: string
+    }
+  | {
+      type: 'sub-attributes-added'
+      attributeId: string
+      children: GraphSubAttribute[]
       at: string
     }
   | {
@@ -116,6 +166,31 @@ export type EditorAction =
       at: string
     }
   | { type: 'profile-avatar-removed'; assetId: string; at: string }
+  | {
+      type: 'decoration-settings-changed'
+      patch: Partial<GraphDecorationSettings>
+      group?: string
+      at: string
+    }
+  | {
+      type: 'decoration-image-attached'
+      image: GraphDecorationImage
+      asset: LocalImageAsset
+      at: string
+    }
+  | {
+      type: 'decoration-image-changed'
+      imageId: string
+      patch: Partial<Omit<GraphDecorationImage, 'id' | 'assetId'>>
+      group?: string
+      at: string
+    }
+  | {
+      type: 'decoration-image-removed'
+      imageId: string
+      assetId: string
+      at: string
+    }
   | { type: 'status-changed'; message: string }
   | {
       type: 'editor-restored'
@@ -140,6 +215,8 @@ export function createInitialEditorState(
     document,
     selectedNodeId: document.categories[0]?.attributes[0]?.id ?? null,
     editingCustomTextId: null,
+    editingDecorationImageId: null,
+    editingDecorationFrameId: null,
     assets: {},
     statusMessage: '编辑器已就绪',
     revision: 0,
@@ -174,6 +251,8 @@ function historySnapshot(state: EditorState): EditorHistorySnapshot {
     document: state.document,
     selectedNodeId: state.selectedNodeId,
     editingCustomTextId: state.editingCustomTextId,
+    editingDecorationImageId: state.editingDecorationImageId,
+    editingDecorationFrameId: state.editingDecorationFrameId,
     assets: state.assets,
   }
 }
@@ -264,6 +343,36 @@ function updateNode(
   }
 }
 
+function updateCategoryAppearance(
+  document: GraphDocument,
+  categoryId: string,
+  patch: GraphCategoryAppearance | null,
+): GraphDocument {
+  let changed = false
+  const categories = document.categories.map((category) => {
+    if (category.id !== categoryId) return category
+    changed = true
+    if (patch === null) {
+      const next = { ...category }
+      delete next.appearance
+      return next
+    }
+    const appearance = { ...category.appearance, ...patch }
+    Object.keys(appearance).forEach((key) => {
+      if (appearance[key as keyof GraphCategoryAppearance] === undefined) {
+        delete appearance[key as keyof GraphCategoryAppearance]
+      }
+    })
+    if (Object.keys(appearance).length === 0) {
+      const next = { ...category }
+      delete next.appearance
+      return next
+    }
+    return { ...category, appearance }
+  })
+  return changed ? { ...document, categories } : document
+}
+
 function setNodeImage(
   document: GraphDocument,
   nodeId: string,
@@ -274,8 +383,13 @@ function setNodeImage(
     categories: document.categories.map((category) => {
       if (category.id === nodeId) {
         const next = { ...category }
-        if (imageAssetId) next.imageAssetId = imageAssetId
-        else delete next.imageAssetId
+        if (imageAssetId) {
+          next.imageAssetId = imageAssetId
+          next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+        } else {
+          delete next.imageAssetId
+          delete next.imageTransform
+        }
         return next
       }
 
@@ -284,8 +398,13 @@ function setNodeImage(
         attributes: category.attributes.map((attribute) => {
           if (attribute.id === nodeId) {
             const next = { ...attribute }
-            if (imageAssetId) next.imageAssetId = imageAssetId
-            else delete next.imageAssetId
+            if (imageAssetId) {
+              next.imageAssetId = imageAssetId
+              next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+            } else {
+              delete next.imageAssetId
+              delete next.imageTransform
+            }
             return next
           }
 
@@ -294,8 +413,13 @@ function setNodeImage(
             children: attribute.children.map((child) => {
               if (child.id !== nodeId) return child
               const next = { ...child }
-              if (imageAssetId) next.imageAssetId = imageAssetId
-              else delete next.imageAssetId
+              if (imageAssetId) {
+                next.imageAssetId = imageAssetId
+                next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+              } else {
+                delete next.imageAssetId
+                delete next.imageTransform
+              }
               return next
             }),
           }
@@ -320,6 +444,87 @@ function removeNode(document: GraphDocument, nodeId: string): GraphDocument {
           })),
       })),
   }
+}
+
+function collectCategoryAssetIds(categories: GraphCategory[]): string[] {
+  const ids: string[] = []
+  const add = (node: GraphNode) => {
+    if (node.imageAssetId) ids.push(node.imageAssetId)
+  }
+  categories.forEach((category) => {
+    add(category)
+    category.attributes.forEach((attribute) => {
+      add(attribute)
+      attribute.children.forEach(add)
+    })
+  })
+  return ids
+}
+
+function moveArrayItem<T>(
+  items: T[],
+  index: number,
+  direction: 'up' | 'down',
+): T[] | null {
+  const targetIndex = index + (direction === 'up' ? -1 : 1)
+  if (index < 0 || targetIndex < 0 || targetIndex >= items.length) return null
+  const next = [...items]
+  ;[next[index], next[targetIndex]] = [next[targetIndex]!, next[index]!]
+  return next
+}
+
+function moveNode(
+  document: GraphDocument,
+  nodeId: string,
+  direction: 'up' | 'down',
+): GraphDocument {
+  const match = findGraphNode(document, nodeId)
+  if (!match) return document
+
+  if (match.kind === 'category') {
+    const categories = moveArrayItem(
+      document.categories,
+      document.categories.findIndex((category) => category.id === nodeId),
+      direction,
+    )
+    return categories ? { ...document, categories } : document
+  }
+
+  if (match.kind === 'attribute') {
+    let changed = false
+    const categories = document.categories.map((category) => {
+      if (category.id !== match.categoryId) return category
+      const attributes = moveArrayItem(
+        category.attributes,
+        category.attributes.findIndex((attribute) => attribute.id === nodeId),
+        direction,
+      )
+      if (!attributes) return category
+      changed = true
+      return { ...category, attributes }
+    })
+    return changed ? { ...document, categories } : document
+  }
+
+  let changed = false
+  const categories = document.categories.map((category) => {
+    if (category.id !== match.categoryId) return category
+    return {
+      ...category,
+      attributes: category.attributes.map((attribute) => {
+        if (attribute.id !== match.parentId) return attribute
+        const children = moveArrayItem(
+          attribute.children,
+          attribute.children.findIndex((child) => child.id === nodeId),
+          direction,
+        )
+        if (!children) return attribute
+        changed = true
+        return { ...attribute, children }
+      }),
+    }
+  })
+  return changed ? { ...document, categories } : document
 }
 
 export function editorReducer(
@@ -356,6 +561,32 @@ export function editorReducer(
         },
         { key: 'canvas-background', at: action.at },
       )
+    case 'canvas-size-changed': {
+      if (state.document.canvas.templateId !== 'custom') return state
+      const width = Math.min(4096, Math.max(320, Math.round(action.width)))
+      const height = Math.min(4096, Math.max(320, Math.round(action.height)))
+      if (
+        width === state.document.canvas.width &&
+        height === state.document.canvas.height
+      ) {
+        return state
+      }
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            canvas: {
+              ...state.document.canvas,
+              width,
+              height,
+              templateId: 'custom',
+            },
+          },
+          action.at,
+        ),
+        statusMessage: '画布尺寸已更新为 ' + width + ' × ' + height,
+      })
+    }
     case 'template-applied': {
       const template = getGraphTemplate(action.templateId)
       return markDirty(state, {
@@ -423,16 +654,28 @@ export function editorReducer(
           ? { key: 'label-settings:' + action.group, at: action.at }
           : undefined,
       )
-    case 'profile-settings-changed':
+    case 'profile-settings-changed': {
+      const profile = {
+        ...state.document.profile,
+        ...action.patch,
+      }
+      const layerOrder = resolveDecorationLayerOrder(
+        state.document.decoration,
+        profile.customTexts.map((text) => text.id),
+      )
       return markDirty(
         state,
         {
           document: touchDocument(
             {
               ...state.document,
-              profile: {
-                ...state.document.profile,
-                ...action.patch,
+              profile,
+              decoration: {
+                ...state.document.decoration,
+                layerOrder,
+                hiddenLayerIds: state.document.decoration.hiddenLayerIds.filter(
+                  (id) => layerOrder.includes(id),
+                ),
               },
             },
             action.at,
@@ -450,11 +693,30 @@ export function editorReducer(
           ? { key: 'profile:' + action.group, at: action.at }
           : undefined,
       )
+    }
     case 'custom-text-selected':
       return {
         ...state,
         editingCustomTextId: action.textId,
+        editingDecorationImageId: null,
+        editingDecorationFrameId: null,
         selectedNodeId: action.textId ? null : state.selectedNodeId,
+      }
+    case 'decoration-image-selected':
+      return {
+        ...state,
+        editingDecorationImageId: action.imageId,
+        editingCustomTextId: null,
+        editingDecorationFrameId: null,
+        selectedNodeId: action.imageId ? null : state.selectedNodeId,
+      }
+    case 'decoration-frame-selected':
+      return {
+        ...state,
+        editingDecorationFrameId: action.frameId,
+        editingDecorationImageId: null,
+        editingCustomTextId: null,
+        selectedNodeId: action.frameId ? null : state.selectedNodeId,
       }
     case 'layout-mode-changed':
       return markDirty(state, {
@@ -476,6 +738,8 @@ export function editorReducer(
         ...state,
         selectedNodeId: action.nodeId,
         editingCustomTextId: null,
+        editingDecorationImageId: null,
+        editingDecorationFrameId: null,
       }
     case 'node-updated': {
       const patchKey = Object.keys(action.patch).sort().join(',')
@@ -489,6 +753,80 @@ export function editorReducer(
         },
         { key: `node:${action.nodeId}:${patchKey}`, at: action.at },
       )
+    }
+    case 'node-moved': {
+      const document = moveNode(state.document, action.nodeId, action.direction)
+      if (document === state.document) return state
+      return markDirty(state, {
+        document: touchDocument(document, action.at),
+        statusMessage: action.direction === 'up' ? '节点已上移' : '节点已下移',
+      })
+    }
+    case 'category-appearance-changed': {
+      const document = updateCategoryAppearance(
+        state.document,
+        action.categoryId,
+        action.patch,
+      )
+      if (document === state.document) return state
+      return markDirty(
+        state,
+        {
+          document: touchDocument(document, action.at),
+          statusMessage: '分类外观已更新',
+        },
+        action.group
+          ? {
+              key:
+                'category-appearance:' + action.categoryId + ':' + action.group,
+              at: action.at,
+            }
+          : undefined,
+      )
+    }
+    case 'category-appearance-reset': {
+      const match = findGraphNode(state.document, action.categoryId)
+      if (
+        match?.kind !== 'category' ||
+        !(match.node as GraphCategory).appearance
+      ) {
+        return state
+      }
+      return markDirty(state, {
+        document: touchDocument(
+          updateCategoryAppearance(state.document, action.categoryId, null),
+          action.at,
+        ),
+        statusMessage: '分类外观已恢复为全局设置',
+      })
+    }
+    case 'graph-text-imported': {
+      if (action.categories.length === 0) return state
+      const replaces = action.mode === 'replace'
+      const assets = { ...state.assets }
+      if (replaces) {
+        collectCategoryAssetIds(state.document.categories).forEach(
+          (assetId) => delete assets[assetId],
+        )
+      }
+      const categories = replaces
+        ? action.categories
+        : [...state.document.categories, ...action.categories]
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            categories,
+          },
+          action.at,
+        ),
+        assets,
+        selectedNodeId: action.categories[0]?.id ?? state.selectedNodeId,
+        statusMessage:
+          (replaces ? '已替换为' : '已追加') +
+          action.categories.length +
+          ' 个文本分类',
+      })
     }
     case 'category-added':
       return markDirty(state, {
@@ -519,6 +857,31 @@ export function editorReducer(
         ),
         selectedNodeId: action.attribute.id,
       })
+    case 'attributes-added': {
+      if (action.attributes.length === 0) return state
+      const category = state.document.categories.find(
+        (item) => item.id === action.categoryId,
+      )
+      if (!category) return state
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            categories: state.document.categories.map((item) =>
+              item.id === action.categoryId
+                ? {
+                    ...item,
+                    attributes: [...item.attributes, ...action.attributes],
+                  }
+                : item,
+            ),
+          },
+          action.at,
+        ),
+        selectedNodeId: action.attributes.at(-1)?.id ?? state.selectedNodeId,
+        statusMessage: '已添加 ' + action.attributes.length + ' 个属性',
+      })
+    }
     case 'sub-attribute-added':
       return markDirty(state, {
         document: touchDocument(
@@ -540,6 +903,32 @@ export function editorReducer(
         ),
         selectedNodeId: action.child.id,
       })
+    case 'sub-attributes-added': {
+      if (action.children.length === 0) return state
+      const match = findGraphNode(state.document, action.attributeId)
+      if (match?.kind !== 'attribute') return state
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            categories: state.document.categories.map((category) => ({
+              ...category,
+              attributes: category.attributes.map((attribute) =>
+                attribute.id === action.attributeId
+                  ? {
+                      ...attribute,
+                      children: [...attribute.children, ...action.children],
+                    }
+                  : attribute,
+              ),
+            })),
+          },
+          action.at,
+        ),
+        selectedNodeId: action.children.at(-1)?.id ?? state.selectedNodeId,
+        statusMessage: '已添加 ' + action.children.length + ' 个子属性',
+      })
+    }
     case 'node-removed': {
       const assets = { ...state.assets }
       action.removedAssetIds.forEach((assetId) => delete assets[assetId])
@@ -592,6 +981,7 @@ export function editorReducer(
             profile: {
               ...state.document.profile,
               avatarAssetId: action.asset.id,
+              avatarTransform: { ...DEFAULT_IMAGE_TRANSFORM },
             },
           },
           action.at,
@@ -605,6 +995,7 @@ export function editorReducer(
       delete assets[action.assetId]
       const profile = { ...state.document.profile }
       delete profile.avatarAssetId
+      delete profile.avatarTransform
       return markDirty(state, {
         document: touchDocument(
           {
@@ -617,6 +1008,128 @@ export function editorReducer(
         statusMessage: '资料头像已移除',
       })
     }
+    case 'decoration-image-attached': {
+      if (state.document.decoration.images.length >= 20) return state
+      const layerId = decorationImageLayerId(action.image.id)
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            decoration: {
+              ...state.document.decoration,
+              images: [...state.document.decoration.images, action.image],
+              layerOrder: [
+                layerId,
+                ...resolveDecorationLayerOrder(
+                  state.document.decoration,
+                  state.document.profile.customTexts.map((text) => text.id),
+                ).filter((id) => id !== layerId),
+              ],
+            },
+          },
+          action.at,
+        ),
+        assets: { ...state.assets, [action.asset.id]: action.asset },
+        statusMessage: '已添加装饰图片 ' + action.asset.fileName,
+      })
+    }
+    case 'decoration-image-changed': {
+      if (
+        !state.document.decoration.images.some(
+          (image) => image.id === action.imageId,
+        )
+      ) {
+        return state
+      }
+      return markDirty(
+        state,
+        {
+          document: touchDocument(
+            {
+              ...state.document,
+              decoration: {
+                ...state.document.decoration,
+                images: state.document.decoration.images.map((image) =>
+                  image.id === action.imageId
+                    ? { ...image, ...action.patch }
+                    : image,
+                ),
+              },
+            },
+            action.at,
+          ),
+          statusMessage: '装饰图片已更新',
+        },
+        action.group
+          ? {
+              key: 'decoration-image:' + action.imageId + ':' + action.group,
+              at: action.at,
+            }
+          : undefined,
+      )
+    }
+    case 'decoration-image-removed': {
+      const image = state.document.decoration.images.find(
+        (candidate) => candidate.id === action.imageId,
+      )
+      if (!image || image.assetId !== action.assetId) return state
+      const assets = { ...state.assets }
+      delete assets[action.assetId]
+      const layerId = decorationImageLayerId(action.imageId)
+      return markDirty(state, {
+        document: touchDocument(
+          {
+            ...state.document,
+            decoration: {
+              ...state.document.decoration,
+              images: state.document.decoration.images.filter(
+                (candidate) => candidate.id !== action.imageId,
+              ),
+              layerOrder: state.document.decoration.layerOrder.filter(
+                (id) => id !== layerId,
+              ),
+              hiddenLayerIds: state.document.decoration.hiddenLayerIds.filter(
+                (id) => id !== layerId,
+              ),
+            },
+          },
+          action.at,
+        ),
+        assets,
+        editingDecorationImageId:
+          state.editingDecorationImageId === action.imageId
+            ? null
+            : state.editingDecorationImageId,
+        statusMessage: '装饰图片已移除',
+      })
+    }
+    case 'decoration-settings-changed':
+      return markDirty(
+        state,
+        {
+          document: touchDocument(
+            {
+              ...state.document,
+              decoration: {
+                ...state.document.decoration,
+                ...action.patch,
+              },
+            },
+            action.at,
+          ),
+          statusMessage: '背景装饰已更新',
+          ...(action.patch.frames &&
+          state.editingDecorationFrameId &&
+          !action.patch.frames.some(
+            (frame) => frame.id === state.editingDecorationFrameId,
+          )
+            ? { editingDecorationFrameId: null }
+            : {}),
+        },
+        action.group
+          ? { key: 'decoration:' + action.group, at: action.at }
+          : undefined,
+      )
     case 'status-changed':
       return { ...state, statusMessage: action.message }
     case 'editor-restored':
@@ -629,6 +1142,8 @@ export function editorReducer(
           action.document.categories[0]?.id ??
           null,
         editingCustomTextId: null,
+        editingDecorationImageId: null,
+        editingDecorationFrameId: null,
         statusMessage: action.message ?? '已恢复本地项目',
         revision: 0,
         persistence: {
@@ -660,6 +1175,8 @@ export function editorReducer(
         document: touchDocument(previous.document, action.at),
         selectedNodeId: previous.selectedNodeId,
         editingCustomTextId: previous.editingCustomTextId,
+        editingDecorationImageId: previous.editingDecorationImageId,
+        editingDecorationFrameId: previous.editingDecorationFrameId,
         assets: previous.assets,
         statusMessage: '已撤销',
         revision: state.revision + 1,
@@ -683,6 +1200,8 @@ export function editorReducer(
         document: touchDocument(next.document, action.at),
         selectedNodeId: next.selectedNodeId,
         editingCustomTextId: next.editingCustomTextId,
+        editingDecorationImageId: next.editingDecorationImageId,
+        editingDecorationFrameId: next.editingDecorationFrameId,
         assets: next.assets,
         statusMessage: '已重做',
         revision: state.revision + 1,

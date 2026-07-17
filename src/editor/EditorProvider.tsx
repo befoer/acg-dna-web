@@ -31,6 +31,7 @@ import {
   type ProjectRepository,
   type ProjectSummary,
 } from './persistence'
+import { findDuplicateProjectIds } from './projectDuplicates'
 import {
   createProjectFileBlob,
   createProjectFileName,
@@ -51,6 +52,7 @@ interface RestoredProjectAssets {
 }
 
 const PROFILE_AVATAR_REQUEST_KEY = 'profile-avatar'
+const DECORATION_IMAGE_REQUEST_KEY = 'decoration-image'
 
 async function restoreProjectAssets(
   snapshot: PersistedEditorSnapshot,
@@ -122,6 +124,8 @@ export function EditorProvider({
   const saveTimerRef = useRef<number | null>(null)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const lastSavedRevisionRef = useRef(-1)
+  const persistenceInitializedRef = useRef(false)
+  const duplicateCleanupStartedRef = useRef(false)
 
   const updateActiveProjectId = useCallback((projectId: string | null) => {
     activeProjectIdRef.current = projectId
@@ -284,8 +288,17 @@ export function EditorProvider({
     }
   }, [enqueueSave, projectRepository])
 
+  const retrySave = useCallback(async () => {
+    try {
+      await flushCurrentProject()
+    } catch {
+      // flushCurrentProject has already surfaced the current save error.
+    }
+  }, [flushCurrentProject])
+
   useEffect(() => {
     let cancelled = false
+    if (persistenceInitializedRef.current) return
     lastSavedRevisionRef.current = -1
 
     if (!projectRepository) {
@@ -302,6 +315,7 @@ export function EditorProvider({
         status: 'unavailable',
         errorMessage: '当前浏览器不支持 IndexedDB',
       })
+      persistenceInitializedRef.current = true
       setPersistenceReady(true)
       return
     }
@@ -335,11 +349,18 @@ export function EditorProvider({
             '已创建本地项目',
           )
           setProjects([summaryFromSnapshot(currentState.document.id, snapshot)])
+          persistenceInitializedRef.current = true
           setPersistenceReady(true)
           return
         }
 
         if (stateRef.current.revision > 0) {
+          if (activeProjectIdRef.current) {
+            setProjects(projectList)
+            persistenceInitializedRef.current = true
+            setPersistenceReady(true)
+            return
+          }
           const currentState = stateRef.current
           const savedAt = new Date().toISOString()
           const document = {
@@ -367,6 +388,7 @@ export function EditorProvider({
               summaryFromSnapshot(document.id, snapshot),
             ),
           )
+          persistenceInitializedRef.current = true
           setPersistenceReady(true)
           return
         }
@@ -378,6 +400,7 @@ export function EditorProvider({
         )
         if (cancelled) return
         setProjects(projectList)
+        persistenceInitializedRef.current = true
         setPersistenceReady(true)
       } catch (error) {
         if (cancelled) return
@@ -393,6 +416,60 @@ export function EditorProvider({
       cancelled = true
     }
   }, [applyProjectSnapshot, projectRepository, updateActiveProjectId])
+
+  useEffect(() => {
+    if (
+      !projectRepository ||
+      !persistenceReady ||
+      !activeProjectId ||
+      duplicateCleanupStartedRef.current ||
+      projectActionPendingRef.current
+    ) {
+      return
+    }
+    duplicateCleanupStartedRef.current = true
+    updateProjectActionPending(true)
+    void (async () => {
+      try {
+        const summaries = await projectRepository.listProjects()
+        const entries = []
+        for (const summary of summaries) {
+          const snapshot = await projectRepository.loadProject(summary.id)
+          if (snapshot) entries.push({ summary, snapshot })
+        }
+        const duplicateIds = await findDuplicateProjectIds(
+          entries,
+          activeProjectIdRef.current,
+        )
+        for (const projectId of duplicateIds) {
+          await projectRepository.deleteProject(projectId)
+        }
+        if (!mountedRef.current) return
+        if (duplicateIds.length > 0) {
+          await refreshProjects()
+          dispatch({
+            type: 'status-changed',
+            message: '已自动清理 ' + duplicateIds.length + ' 个重复项目',
+          })
+        }
+      } catch (error) {
+        if (mountedRef.current) {
+          dispatch({
+            type: 'status-changed',
+            message: '重复项目自动清理失败：' + persistenceErrorMessage(error),
+          })
+        }
+      } finally {
+        if (mountedRef.current) updateProjectActionPending(false)
+      }
+    })()
+  }, [
+    activeProjectId,
+    persistenceReady,
+    projectRepository,
+    refreshProjects,
+    updateProjectActionPending,
+  ])
 
   useEffect(() => {
     if (
@@ -767,7 +844,7 @@ export function EditorProvider({
         type: 'status-changed',
         message: '项目操作完成后再选择图片',
       })
-      return
+      return null
     }
     const requestToken = Symbol(nodeId)
     imageRequestTokensRef.current.set(nodeId, requestToken)
@@ -779,7 +856,7 @@ export function EditorProvider({
       const target = findGraphNode(currentState.document, nodeId)
       if (!mountedRef.current || currentToken !== requestToken || !target) {
         revokeLocalImageAsset(asset)
-        return
+        return null
       }
 
       imageRequestTokensRef.current.delete(nodeId)
@@ -792,12 +869,16 @@ export function EditorProvider({
         ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
         at: new Date().toISOString(),
       })
+      return asset.id
     } catch (error) {
-      if (imageRequestTokensRef.current.get(nodeId) !== requestToken) return
+      if (imageRequestTokensRef.current.get(nodeId) !== requestToken) {
+        return null
+      }
       imageRequestTokensRef.current.delete(nodeId)
-      if (!mountedRef.current) return
+      if (!mountedRef.current) return null
       const message = error instanceof Error ? error.message : '图片读取失败'
       dispatch({ type: 'status-changed', message })
+      return null
     }
   }, [])
 
@@ -821,7 +902,7 @@ export function EditorProvider({
         type: 'status-changed',
         message: '项目操作完成后再选择头像',
       })
-      return
+      return null
     }
     const requestToken = Symbol(PROFILE_AVATAR_REQUEST_KEY)
     imageRequestTokensRef.current.set(PROFILE_AVATAR_REQUEST_KEY, requestToken)
@@ -833,7 +914,7 @@ export function EditorProvider({
       )
       if (!mountedRef.current || currentToken !== requestToken) {
         revokeLocalImageAsset(asset)
-        return
+        return null
       }
       imageRequestTokensRef.current.delete(PROFILE_AVATAR_REQUEST_KEY)
       const previousAssetId = stateRef.current.document.profile.avatarAssetId
@@ -844,19 +925,21 @@ export function EditorProvider({
         ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
         at: new Date().toISOString(),
       })
+      return asset.id
     } catch (error) {
       if (
         imageRequestTokensRef.current.get(PROFILE_AVATAR_REQUEST_KEY) !==
         requestToken
       ) {
-        return
+        return null
       }
       imageRequestTokensRef.current.delete(PROFILE_AVATAR_REQUEST_KEY)
-      if (!mountedRef.current) return
+      if (!mountedRef.current) return null
       dispatch({
         type: 'status-changed',
         message: error instanceof Error ? error.message : '头像读取失败',
       })
+      return null
     }
   }, [])
 
@@ -867,6 +950,87 @@ export function EditorProvider({
     dispatch({
       type: 'profile-avatar-removed',
       assetId,
+      at: new Date().toISOString(),
+    })
+  }, [])
+
+  const attachDecorationImage = useCallback(async (file: File) => {
+    if (projectActionPendingRef.current) {
+      dispatch({
+        type: 'status-changed',
+        message: '项目操作完成后再选择装饰图片',
+      })
+      return null
+    }
+    if (stateRef.current.document.decoration.images.length >= 20) {
+      dispatch({
+        type: 'status-changed',
+        message: '装饰图片最多添加 20 张',
+      })
+      return null
+    }
+    const requestToken = Symbol(DECORATION_IMAGE_REQUEST_KEY)
+    imageRequestTokensRef.current.set(
+      DECORATION_IMAGE_REQUEST_KEY,
+      requestToken,
+    )
+    dispatch({ type: 'status-changed', message: '正在读取装饰图片…' })
+    try {
+      const asset = await loadLocalImageAsset(file)
+      if (
+        !mountedRef.current ||
+        imageRequestTokensRef.current.get(DECORATION_IMAGE_REQUEST_KEY) !==
+          requestToken
+      ) {
+        revokeLocalImageAsset(asset)
+        return null
+      }
+      imageRequestTokensRef.current.delete(DECORATION_IMAGE_REQUEST_KEY)
+      const imageId = createEntityId('decoration-image')
+      knownAssetsRef.current.set(asset.id, asset)
+      dispatch({
+        type: 'decoration-image-attached',
+        asset,
+        image: {
+          id: imageId,
+          name: file.name,
+          assetId: asset.id,
+          visible: true,
+          x: 0.5,
+          y: 0.5,
+          size: 0.35,
+          rotation: 0,
+          opacity: 1,
+        },
+        at: new Date().toISOString(),
+      })
+      return imageId
+    } catch (error) {
+      if (
+        imageRequestTokensRef.current.get(DECORATION_IMAGE_REQUEST_KEY) !==
+        requestToken
+      ) {
+        return null
+      }
+      imageRequestTokensRef.current.delete(DECORATION_IMAGE_REQUEST_KEY)
+      if (!mountedRef.current) return null
+      dispatch({
+        type: 'status-changed',
+        message: error instanceof Error ? error.message : '装饰图片读取失败',
+      })
+      return null
+    }
+  }, [])
+
+  const removeDecorationImage = useCallback((imageId: string) => {
+    const image = stateRef.current.document.decoration.images.find(
+      (candidate) => candidate.id === imageId,
+    )
+    if (!image) return
+    dispatch({
+      type: 'decoration-image-removed',
+      imageId,
+      assetId: image.assetId,
       at: new Date().toISOString(),
     })
   }, [])
@@ -902,12 +1066,15 @@ export function EditorProvider({
       dispatch,
       attachImage,
       attachProfileAvatar,
+      attachDecorationImage,
       removeImage,
       removeProfileAvatar,
+      removeDecorationImage,
       removeNode,
       projects,
       activeProjectId,
       projectActionPending,
+      retrySave,
       createProject,
       switchProject,
       duplicateProject,
@@ -919,6 +1086,7 @@ export function EditorProvider({
       activeProjectId,
       attachImage,
       attachProfileAvatar,
+      attachDecorationImage,
       createProject,
       deleteProject,
       duplicateProject,
@@ -926,8 +1094,10 @@ export function EditorProvider({
       importProject,
       projectActionPending,
       projects,
+      retrySave,
       removeImage,
       removeProfileAvatar,
+      removeDecorationImage,
       removeNode,
       state,
       switchProject,

@@ -50,7 +50,15 @@ function rounded(value: number): number {
   return Number(value.toFixed(4))
 }
 
-export function ContentBoundsPanel() {
+export function ContentBoundsPanel({
+  embedded = false,
+  editing = false,
+  onEditingChange,
+}: {
+  embedded?: boolean
+  editing?: boolean
+  onEditingChange?: (editing: boolean) => void
+} = {}) {
   const { state, dispatch } = useEditor()
   const bounds = state.document.canvas.contentBounds
   const width = bounds.right - bounds.left
@@ -67,21 +75,34 @@ export function ContentBoundsPanel() {
 
   return (
     <div className={'bounds-panel-content'} aria-label={'标签范围面板'}>
-      <div className={'panel-header'}>
+      <div className={embedded ? 'appearance-section-heading' : 'panel-header'}>
         <div>
-          <p className={'panel-eyebrow'}>CONTENT BOUNDS</p>
-          <h2>标签范围</h2>
+          {embedded ? null : <p className={'panel-eyebrow'}>CONTENT BOUNDS</p>}
+          {embedded ? <strong>标签范围</strong> : <h2>标签范围</h2>}
+          {embedded ? <small>控制整组气泡的位置、大小和旋转</small> : null}
         </div>
-        <button
-          type={'button'}
-          className={'compact-button'}
-          onClick={() => update({ ...template.contentBounds })}
-        >
-          重置
-        </button>
+        <div className={'bounds-heading-actions'}>
+          {onEditingChange ? (
+            <button
+              type={'button'}
+              className={'compact-button' + (editing ? ' is-active' : '')}
+              aria-pressed={editing}
+              onClick={() => onEditingChange(!editing)}
+            >
+              {editing ? '隐藏调整框' : '显示调整框'}
+            </button>
+          ) : null}
+          <button
+            type={'button'}
+            className={'compact-button'}
+            onClick={() => update({ ...template.contentBounds })}
+          >
+            重置
+          </button>
+        </div>
       </div>
       <p className={'panel-note'}>
-        控制整组气泡在画布中的位置、大小和旋转。青色边框只在编辑时显示，不会导出。
+        控制整组气泡的位置、大小和旋转。显示调整框后可拖动框内移动整体、拖四角改变宽高、拖边框单独调整一边；青色边框不会导出。
       </p>
 
       <section className={'bounds-card'} aria-label={'标签范围参数'}>

@@ -7,6 +7,11 @@ import {
 } from 'react'
 
 import { useEditor } from '../editor/editorContext'
+import {
+  formatStorageBytes,
+  readBrowserStorageEstimate,
+  type BrowserStorageEstimate,
+} from '../editor/storageEstimate'
 
 function downloadBlob(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(blob)
@@ -46,9 +51,27 @@ export function ProjectManager() {
   } = useEditor()
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [storageEstimate, setStorageEstimate] =
+    useState<BrowserStorageEstimate | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const storageAvailable = state.persistence.status !== 'unavailable'
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void readBrowserStorageEstimate().then(
+      (estimate) => {
+        if (!cancelled) setStorageEstimate(estimate)
+      },
+      () => {
+        if (!cancelled) setStorageEstimate(null)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [open, state.persistence.lastSavedAt])
 
   useEffect(() => {
     if (!open) return
@@ -198,6 +221,12 @@ export function ProjectManager() {
               {exporting ? '导出中…' : '⇩ 导出'}
             </button>
           </div>
+
+          {storageEstimate ? (
+            <div className={'project-storage'} aria-label={'浏览器存储空间'}>
+              已使用 {formatStorageBytes(storageEstimate.usage)}
+            </div>
+          ) : null}
 
           <input
             ref={importInputRef}

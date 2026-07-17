@@ -35,7 +35,15 @@ describe('local editor flow', () => {
     expect(screen.getByText('赛博叙事')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '＋ 添加子属性' }))
-    expect(screen.getByLabelText('名称')).toHaveValue('新子属性')
+    expect(
+      screen.getByRole('dialog', { name: '添加子属性' }),
+    ).toBeInTheDocument()
+    const childName = screen.getByRole('textbox', {
+      name: /子属性名称/,
+    })
+    await user.type(childName, '镜头语言')
+    await user.click(screen.getByRole('button', { name: '添加' }))
+    expect(screen.getByLabelText('名称')).toHaveValue('镜头语言')
   })
 
   it('switches layout and changes only the preview zoom', async () => {
@@ -70,12 +78,74 @@ describe('local editor flow', () => {
     expect(canvas).toHaveAttribute('width', '1280')
     expect(canvas).toHaveAttribute('height', '1847')
 
-    await user.click(within(toolRail).getByRole('button', { name: /范围/ }))
+    await user.click(within(toolRail).getByRole('button', { name: /外观/ }))
+    await user.click(screen.getByRole('tab', { name: '画布' }))
+    const editBounds = screen.getByRole('button', { name: '显示调整框' })
+    expect(editBounds).toHaveAttribute('aria-pressed', 'false')
+    await user.click(editBounds)
+    expect(screen.getByRole('button', { name: '隐藏调整框' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await user.click(screen.getByRole('tab', { name: '装饰' }))
+    await user.click(screen.getByRole('tab', { name: '画布' }))
+    expect(screen.getByRole('button', { name: '显示调整框' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
     const width = screen.getByRole('slider', { name: '宽度' })
     expect(width).toHaveValue('87')
     fireEvent.change(width, { target: { value: '60' } })
     expect(width).toHaveValue('60')
     expect(screen.getByText('60%')).toBeInTheDocument()
+  })
+
+  it('switches the compact appearance sections without adding main tools', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const toolRail = screen.getByRole('navigation', {
+      name: '编辑器工具',
+    })
+    await user.click(within(toolRail).getByRole('button', { name: /外观/ }))
+
+    expect(screen.getByRole('tab', { name: '装饰' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await user.click(screen.getByRole('tab', { name: /图层/ }))
+    expect(screen.getByText('列表从上到下对应画布从前到后')).toBeVisible()
+    await user.click(screen.getByRole('tab', { name: '画布' }))
+    expect(screen.getByText('画布比例')).toBeVisible()
+    expect(within(toolRail).getAllByRole('button')).toHaveLength(4)
+    expect(
+      within(screen.getByRole('tablist', { name: '编辑面板' })).getAllByRole(
+        'tab',
+      ),
+    ).toHaveLength(4)
+  })
+
+  it('shows the effective custom text visibility in the shared layer list', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const toolRail = screen.getByRole('navigation', {
+      name: '编辑器工具',
+    })
+
+    await user.click(within(toolRail).getByRole('button', { name: /资料/ }))
+    await user.click(screen.getByRole('button', { name: '＋ 添加文字' }))
+    await user.click(screen.getByRole('button', { name: '隐藏自定义文字' }))
+    await user.click(within(toolRail).getByRole('button', { name: /外观/ }))
+    await user.click(screen.getByRole('tab', { name: /图层/ }))
+
+    const textLayer = screen
+      .getByText('自定义文本')
+      .closest<HTMLElement>('[data-layer-id]')
+    expect(textLayer).toHaveClass('is-hidden')
+    await user.click(
+      screen.getByRole('button', { name: '显示图层 自定义文本' }),
+    )
+    expect(textLayer).not.toHaveClass('is-hidden')
   })
 
   it('edits the shared APP profile panel with local-only data', async () => {
@@ -126,12 +196,57 @@ describe('local editor flow', () => {
     expect(screen.queryByLabelText('节点权重数值')).not.toBeInTheDocument()
   })
 
+  it('collapses and expands category data without deleting it', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: '折叠 动画偏好' }))
+    expect(screen.queryByText('叙事氛围')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '展开 动画偏好' }))
+    expect(screen.getByText('叙事氛围')).toBeInTheDocument()
+  })
+
+  it('imports and previews APP-compatible text data', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: '导入文字' }))
+    expect(
+      screen.getByRole('dialog', { name: '导入文字结构' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '填入示例' }))
+    expect(screen.getByText(/识别到/)).toHaveTextContent(
+      '1 个分类、2 个属性、2 个子属性',
+    )
+    await user.click(screen.getByRole('button', { name: '确认追加' }))
+    expect(screen.getByLabelText('数据编辑面板')).toHaveTextContent(
+      '已追加1 个文本分类',
+    )
+
+    await user.click(screen.getByRole('button', { name: '导出文字' }))
+    expect(screen.getByRole('dialog', { name: '导出文字' })).toBeInTheDocument()
+    expect(
+      (screen.getByLabelText('完整结构文本') as HTMLTextAreaElement).value,
+    ).toContain('动画偏好')
+    await user.click(screen.getByRole('tab', { name: '仅标签' }))
+    expect(
+      (screen.getByLabelText('仅标签文本') as HTMLTextAreaElement).value,
+    ).toContain('叙事氛围')
+  })
+
   it('edits and resets global label settings from the data panel', async () => {
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: '全局设置' }))
     expect(screen.getByLabelText('全局标签设置')).toBeInTheDocument()
+
+    const categoryDisplay = screen.getByRole('button', {
+      name: '分类显示',
+    })
+    expect(categoryDisplay).toHaveAttribute('aria-pressed', 'true')
+    await user.click(categoryDisplay)
+    expect(categoryDisplay).toHaveAttribute('aria-pressed', 'false')
 
     const fontFamily = screen.getByRole('combobox', { name: '标签字体' })
     expect(
@@ -266,6 +381,111 @@ describe('local editor flow', () => {
     expect(lastSnapshot?.document.name).toBe('自动保存项目')
     await waitFor(() => {
       expect(screen.getAllByText(/^已保存/).length).toBeGreaterThan(0)
+    })
+  })
+
+  it('automatically removes exact duplicate projects after restore', async () => {
+    const oldDocument = createStarterGraph('2026-07-17T01:00:00.000Z')
+    oldDocument.id = 'graph-old-duplicate'
+    const activeDocument = createStarterGraph('2026-07-17T02:00:00.000Z')
+    activeDocument.id = 'graph-active-copy'
+    const summaries = [
+      {
+        id: activeDocument.id,
+        name: activeDocument.name,
+        createdAt: activeDocument.createdAt,
+        updatedAt: activeDocument.updatedAt,
+        savedAt: '2026-07-17T02:00:00.000Z',
+      },
+      {
+        id: oldDocument.id,
+        name: oldDocument.name,
+        createdAt: oldDocument.createdAt,
+        updatedAt: oldDocument.updatedAt,
+        savedAt: '2026-07-17T01:00:00.000Z',
+      },
+    ]
+    const deleteProject = vi.fn().mockResolvedValue(undefined)
+    const repository: ProjectRepository = {
+      listProjects: vi.fn().mockResolvedValue(summaries),
+      loadActiveProject: vi.fn().mockResolvedValue({
+        projectId: activeDocument.id,
+        snapshot: {
+          document: activeDocument,
+          assets: [],
+          savedAt: '2026-07-17T02:00:00.000Z',
+        },
+      }),
+      loadProject: vi.fn().mockImplementation(async (projectId: string) => ({
+        document:
+          projectId === activeDocument.id ? activeDocument : oldDocument,
+        assets: [],
+        savedAt:
+          projectId === activeDocument.id
+            ? '2026-07-17T02:00:00.000Z'
+            : '2026-07-17T01:00:00.000Z',
+      })),
+      saveProject: vi.fn().mockResolvedValue(undefined),
+      setActiveProject: vi.fn().mockResolvedValue(undefined),
+      deleteProject,
+    }
+
+    render(<App repository={repository} autosaveDelayMs={5} />)
+
+    await waitFor(() => {
+      expect(deleteProject).toHaveBeenCalledWith(oldDocument.id)
+    })
+    expect(deleteProject).not.toHaveBeenCalledWith(activeDocument.id)
+  })
+
+  it('retries a failed local save from the visible status control', async () => {
+    const restoredDocument = createStarterGraph('2026-07-16T00:00:00.000Z')
+    const saveProject = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('模拟保存失败'))
+      .mockResolvedValue(undefined)
+    const repository: ProjectRepository = {
+      listProjects: vi.fn().mockResolvedValue([
+        {
+          id: restoredDocument.id,
+          name: restoredDocument.name,
+          createdAt: restoredDocument.createdAt,
+          updatedAt: restoredDocument.updatedAt,
+          savedAt: '2026-07-16T01:00:00.000Z',
+        },
+      ]),
+      loadActiveProject: vi.fn().mockResolvedValue({
+        projectId: restoredDocument.id,
+        snapshot: {
+          document: restoredDocument,
+          assets: [],
+          savedAt: '2026-07-16T01:00:00.000Z',
+        },
+      }),
+      loadProject: vi.fn().mockResolvedValue(null),
+      saveProject,
+      setActiveProject: vi.fn().mockResolvedValue(undefined),
+      deleteProject: vi.fn().mockResolvedValue(undefined),
+    }
+
+    render(<App repository={repository} autosaveDelayMs={5} />)
+    const projectName = await screen.findByRole('textbox', {
+      name: '项目名称',
+    })
+    fireEvent.change(projectName, { target: { value: '等待重试' } })
+
+    const retryButtons = await screen.findAllByRole('button', {
+      name: '保存失败，点击重试保存',
+    })
+    fireEvent.click(retryButtons[0]!)
+
+    await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(2))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', {
+          name: '保存失败，点击重试保存',
+        }),
+      ).not.toBeInTheDocument()
     })
   })
 

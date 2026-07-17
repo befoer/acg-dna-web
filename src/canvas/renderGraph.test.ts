@@ -6,7 +6,17 @@ import { createGraphLayout, renderGraph } from './renderGraph'
 
 function createCanvasContext() {
   const gradient = { addColorStop: vi.fn() }
+  const globalAlphaValues: number[] = []
+  let globalAlpha = 1
   return {
+    get globalAlpha() {
+      return globalAlpha
+    },
+    set globalAlpha(value: number) {
+      globalAlpha = value
+      globalAlphaValues.push(value)
+    },
+    globalAlphaValues,
     save: vi.fn(),
     restore: vi.fn(),
     setTransform: vi.fn(),
@@ -92,6 +102,12 @@ describe('graph layout content bounds', () => {
     document.canvas.labelSettings.showImages = false
     document.categories[0]!.attributes[0]!.children[0]!.imageAssetId =
       'asset-render'
+    document.categories[0]!.attributes[0]!.children[0]!.imageTransform = {
+      zoom: 1.5,
+      offsetX: 0.2,
+      offsetY: -0.3,
+      rotation: 30,
+    }
     const image = {
       naturalWidth: 64,
       naturalHeight: 64,
@@ -121,6 +137,7 @@ describe('graph layout content bounds', () => {
     renderGraph(visibleContext, document, { [asset.id]: asset })
     expect(visibleContext.fillText).toHaveBeenCalled()
     expect(visibleContext.drawImage).toHaveBeenCalled()
+    expect(visibleContext.rotate).toHaveBeenCalledWith(Math.PI / 6)
   })
 
   it('can leave node text to the SVG variable-font overlay', () => {
@@ -131,6 +148,136 @@ describe('graph layout content bounds', () => {
     renderGraph(context, document, {}, { drawNodeText: false })
 
     expect(context.fillText).not.toHaveBeenCalled()
+  })
+
+  it('renders migrated APP decoration presets on their configured side of data', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    document.decoration.presetIds = ['fox', 'nya-shop']
+    const fox = {
+      naturalWidth: 1280,
+      naturalHeight: 1847,
+    } as HTMLImageElement
+    const nyaShop = {
+      naturalWidth: 1280,
+      naturalHeight: 1847,
+    } as HTMLImageElement
+    const context = createCanvasContext()
+
+    renderGraph(
+      context,
+      document,
+      {},
+      {
+        decorationPresetAssets: { fox, 'nya-shop': nyaShop },
+      },
+    )
+
+    expect(context.drawImage).toHaveBeenCalledWith(
+      nyaShop,
+      0,
+      0,
+      document.canvas.width,
+      document.canvas.height,
+    )
+    expect(context.drawImage).toHaveBeenCalledWith(
+      fox,
+      0,
+      0,
+      document.canvas.width,
+      document.canvas.height,
+    )
+    const calls = (
+      context.drawImage as unknown as {
+        mock: { calls: unknown[][] }
+      }
+    ).mock.calls
+    expect(calls.findIndex((call) => call[0] === nyaShop)).toBeLessThan(
+      calls.findIndex((call) => call[0] === fox),
+    )
+  })
+
+  it('can hide the unified data layer without hiding decorations', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    document.decoration.presetIds = ['fox']
+    document.decoration.hiddenLayerIds = ['data']
+    const fox = {
+      naturalWidth: 1280,
+      naturalHeight: 1847,
+    } as HTMLImageElement
+    const context = createCanvasContext()
+
+    renderGraph(
+      context,
+      document,
+      {},
+      {
+        decorationPresetAssets: { fox },
+      },
+    )
+
+    expect(context.fillText).not.toHaveBeenCalled()
+    expect(context.drawImage).toHaveBeenCalledWith(
+      fox,
+      0,
+      0,
+      document.canvas.width,
+      document.canvas.height,
+    )
+  })
+
+  it('renders a free local decoration image with its element transform', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    document.decoration.images = [
+      {
+        id: 'decoration-image-one',
+        name: '贴纸.png',
+        assetId: 'asset-free-decoration',
+        visible: true,
+        x: 0.7,
+        y: 0.25,
+        size: 0.5,
+        rotation: 30,
+        opacity: 0.6,
+      },
+    ]
+    const blob = new Blob(['image'], { type: 'image/png' })
+    const asset: LocalImageAsset = {
+      id: 'asset-free-decoration',
+      fileName: '贴纸.png',
+      mimeType: 'image/png',
+      byteLength: blob.size,
+      blob,
+      objectUrl: 'blob:free-decoration',
+      image: {
+        naturalWidth: 400,
+        naturalHeight: 200,
+        width: 400,
+        height: 200,
+      } as HTMLImageElement,
+    }
+    const context = createCanvasContext()
+
+    renderGraph(context, document, { [asset.id]: asset })
+
+    expect(context.translate).toHaveBeenCalledWith(
+      document.canvas.width * 0.7,
+      document.canvas.height * 0.25,
+    )
+    expect(context.rotate).toHaveBeenCalledWith(Math.PI / 6)
+    expect(
+      (
+        context as unknown as {
+          globalAlphaValues: number[]
+        }
+      ).globalAlphaValues,
+    ).toContain(0.6)
+    expect(context.drawImage).toHaveBeenCalledWith(
+      asset.image,
+      -document.canvas.width * 0.25,
+      -document.canvas.width * 0.125,
+      document.canvas.width * 0.5,
+      document.canvas.width * 0.25,
+    )
   })
 
   it('renders the selected APP profile sub-template', () => {
