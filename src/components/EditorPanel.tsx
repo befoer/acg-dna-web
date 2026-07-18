@@ -18,6 +18,7 @@ import { CategoryAppearancePanel } from './CategoryAppearancePanel'
 import { GraphTextExportDialog } from './GraphTextExportDialog'
 import { GraphTextImportDialog } from './GraphTextImportDialog'
 import { LocalImageEditor } from './LocalImageEditor'
+import { ImageSearchDialog } from './ImageSearchDialog'
 import { NodeCreateDialog } from './NodeCreateDialog'
 
 const KIND_LABELS: Record<GraphNodeKind, string> = {
@@ -343,7 +344,14 @@ interface SelectedNodeEditorProps {
 function SelectedNodeEditor({
   onOpenCategoryAppearance,
 }: SelectedNodeEditorProps) {
-  const { state, dispatch, attachImage, removeImage, removeNode } = useEditor()
+  const {
+    state,
+    dispatch,
+    attachImage,
+    attachOnlineImage,
+    removeImage,
+    removeNode,
+  } = useEditor()
   const match = selectedNode(state)
   const asset = match?.node.imageAssetId
     ? state.assets[match.node.imageAssetId]
@@ -352,6 +360,7 @@ function SelectedNodeEditor({
     null,
   )
   const [showChildDialog, setShowChildDialog] = useState(false)
+  const [showImageSearch, setShowImageSearch] = useState(false)
   const editorAsset = imageEditorAssetId
     ? state.assets[imageEditorAssetId]
     : undefined
@@ -497,6 +506,13 @@ function SelectedNodeEditor({
                 onChange={handleFile}
               />
             </label>
+            <button
+              type={'button'}
+              className={'ghost-button'}
+              onClick={() => setShowImageSearch(true)}
+            >
+              在线搜索
+            </button>
             {asset ? (
               <button
                 type="button"
@@ -588,6 +604,18 @@ function SelectedNodeEditor({
           onApply={(imageTransform) => {
             update({ imageTransform })
             setImageEditorAssetId(null)
+          }}
+        />
+      ) : null}
+      {showImageSearch ? (
+        <ImageSearchDialog
+          initialQuery={node.name}
+          onClose={() => setShowImageSearch(false)}
+          onSelect={async (result) => {
+            const assetId = await attachOnlineImage(node.id, result)
+            if (!assetId) return false
+            setImageEditorAssetId(assetId)
+            return true
           }}
         />
       ) : null}

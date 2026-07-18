@@ -17,10 +17,12 @@ import {
 } from '../domain/graph'
 import {
   loadLocalImageAsset,
+  loadOnlineImageAsset,
   restoreLocalImageAsset,
   revokeLocalImageAsset,
   type LocalImageAsset,
 } from './assets'
+import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 import { EditorContext } from './editorContext'
 import { createInitialEditorState, editorReducer } from './editorReducer'
 import {
@@ -882,6 +884,53 @@ export function EditorProvider({
     }
   }, [])
 
+  const attachOnlineImage = useCallback(
+    async (nodeId: string, result: OnlineImageSearchResult) => {
+      if (projectActionPendingRef.current) {
+        dispatch({
+          type: 'status-changed',
+          message: '项目操作完成后再选择在线图片',
+        })
+        return null
+      }
+      const requestToken = Symbol(nodeId)
+      imageRequestTokensRef.current.set(nodeId, requestToken)
+      dispatch({ type: 'status-changed', message: '正在下载并保存在线图片…' })
+      try {
+        const asset = await loadOnlineImageAsset(result)
+        const currentState = stateRef.current
+        const currentToken = imageRequestTokensRef.current.get(nodeId)
+        const target = findGraphNode(currentState.document, nodeId)
+        if (!mountedRef.current || currentToken !== requestToken || !target) {
+          revokeLocalImageAsset(asset)
+          return null
+        }
+        imageRequestTokensRef.current.delete(nodeId)
+        const previousAssetId = target.node.imageAssetId
+        knownAssetsRef.current.set(asset.id, asset)
+        dispatch({
+          type: 'asset-attached',
+          nodeId,
+          asset,
+          ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
+          at: new Date().toISOString(),
+        })
+        return asset.id
+      } catch (error) {
+        if (imageRequestTokensRef.current.get(nodeId) !== requestToken) {
+          return null
+        }
+        imageRequestTokensRef.current.delete(nodeId)
+        if (!mountedRef.current) return null
+        const message =
+          error instanceof Error ? error.message : '在线图片保存失败'
+        dispatch({ type: 'status-changed', message })
+        return null
+      }
+    },
+    [],
+  )
+
   const removeImage = useCallback((nodeId: string) => {
     imageRequestTokensRef.current.delete(nodeId)
     const currentState = stateRef.current
@@ -1065,6 +1114,7 @@ export function EditorProvider({
       state,
       dispatch,
       attachImage,
+      attachOnlineImage,
       attachProfileAvatar,
       attachDecorationImage,
       removeImage,
@@ -1085,6 +1135,7 @@ export function EditorProvider({
     [
       activeProjectId,
       attachImage,
+      attachOnlineImage,
       attachProfileAvatar,
       attachDecorationImage,
       createProject,

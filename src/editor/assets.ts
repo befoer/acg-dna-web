@@ -1,4 +1,5 @@
 import { createEntityId } from '../domain/graph'
+import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 
 export const MAX_LOCAL_IMAGE_BYTES = 15 * 1024 * 1024
 
@@ -21,6 +22,42 @@ export interface LocalImageAsset {
   blob: Blob
   objectUrl: string
   image: HTMLImageElement
+  source?: ImageAssetSource
+}
+
+export interface ImageAssetSource {
+  provider: 'bangumi' | 'anilist'
+  externalId: string
+  sourceUrl: string
+  originalUrl: string
+  fetchedAt: string
+}
+
+export function readImageAssetSource(
+  value: unknown,
+): ImageAssetSource | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (
+    (record.provider !== 'bangumi' && record.provider !== 'anilist') ||
+    typeof record.externalId !== 'string' ||
+    !record.externalId.trim() ||
+    typeof record.sourceUrl !== 'string' ||
+    !record.sourceUrl.startsWith('https://') ||
+    typeof record.originalUrl !== 'string' ||
+    !record.originalUrl.startsWith('https://') ||
+    typeof record.fetchedAt !== 'string' ||
+    !Number.isFinite(Date.parse(record.fetchedAt))
+  ) {
+    return undefined
+  }
+  return {
+    provider: record.provider,
+    externalId: record.externalId,
+    sourceUrl: record.sourceUrl,
+    originalUrl: record.originalUrl,
+    fetchedAt: record.fetchedAt,
+  }
 }
 
 export interface StoredLocalImageAsset {
@@ -29,6 +66,7 @@ export interface StoredLocalImageAsset {
   mimeType: string
   byteLength: number
   blob: Blob
+  source?: ImageAssetSource
 }
 
 export class LocalImageError extends Error {
@@ -67,6 +105,62 @@ export async function loadLocalImageAsset(
     mimeType: file.type,
     byteLength: file.size,
     blob: file,
+  })
+}
+
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg'
+  if (mimeType === 'image/png') return 'png'
+  if (mimeType === 'image/webp') return 'webp'
+  return 'avif'
+}
+
+function safeRemoteFileName(result: OnlineImageSearchResult, mimeType: string) {
+  const name = result.name.replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
+  return `${name || result.kind}-${result.provider}-${result.externalId}.${extensionForMimeType(mimeType)}`
+}
+
+export async function loadOnlineImageAsset(
+  result: OnlineImageSearchResult,
+  signal?: AbortSignal,
+): Promise<LocalImageAsset> {
+  let response: Response
+  try {
+    response = await fetch(result.downloadUrl, {
+      headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg' },
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError')
+      throw error
+    throw new LocalImageError('无法下载所选在线图片')
+  }
+  if (!response.ok) {
+    throw new LocalImageError('在线图片下载失败（' + response.status + '）')
+  }
+  const blob = await response.blob()
+  const mimeType = blob.type.split(';')[0]?.trim().toLowerCase() || ''
+  if (!isAcceptedLocalImageMimeType(mimeType)) {
+    throw new LocalImageError('在线图片返回了不支持的格式')
+  }
+  if (blob.size <= 0 || blob.size > MAX_LOCAL_IMAGE_BYTES) {
+    throw new LocalImageError('在线图片为空或超过 15 MB')
+  }
+  return createRuntimeImageAsset({
+    id: createEntityId('asset'),
+    fileName: safeRemoteFileName(result, mimeType),
+    mimeType,
+    byteLength: blob.size,
+    blob,
+    source: {
+      provider: result.provider,
+      externalId: result.externalId,
+      sourceUrl: result.sourceUrl,
+      originalUrl: result.originalUrl,
+      fetchedAt: new Date().toISOString(),
+    },
   })
 }
 
@@ -115,6 +209,7 @@ export function storeLocalImageAsset(
     mimeType: asset.mimeType,
     byteLength: asset.byteLength,
     blob: asset.blob,
+    ...(asset.source ? { source: asset.source } : {}),
   }
 }
 

@@ -1,8 +1,10 @@
 # 在线图片搜索方案
 
-## 第一版结论
+## 当前结论
 
-第一版采用可替换的搜索提供方接口，但只实现 AniList。Bangumi 中文词典、别名、拼音和元数据接入延期；Bangumi CDN 图片仍不得直接写入可导出的 Canvas。
+在线搜索采用可替换的提供方接口：Bangumi 为中文名称和图片的主来源，AniList 为浏览器直连备用。默认通过作者控制的受限无状态网关 `https://bangumi-api.acg-dna.top` 访问 Bangumi，图片也经过同源受限端点下载，不让 Canvas 长期依赖第三方热链。等待 5 秒仍未返回时显示 AniList 备用按钮，10 秒仍未返回时自动切换。原始中文查询若得到不匹配的 AniList 热门榜项会被过滤，不作为搜索结果显示。
+
+可通过 `VITE_BANGUMI_GATEWAY_URL` 替换网关部署地址。仅在调试 CORS 或网络环境时，可显式设置 `VITE_BANGUMI_SEARCH_MODE=direct` 让浏览器直连 Bangumi 文字 API；此模式不读取 Bangumi 图片，不是正式默认路径。AniList 继续由浏览器直接调用。
 
 ## 选择依据
 
@@ -14,7 +16,7 @@
 - AniList 图片 CDN 会为请求来源返回 Access-Control-Allow-Origin，图片可以读取为 Blob 并安全画入 Canvas。
 - AniList 官方文档显示常规上限为每分钟 90 次；当前处于降级状态，实际响应头和文档均显示每分钟 30 次。
 
-## AniList 第一版实现
+## AniList 备用实现
 
 - Endpoint：https://graphql.anilist.co
 - 使用 POST GraphQL 请求，不需要用户登录或 API 密钥。
@@ -36,17 +38,24 @@
 5. 把 Blob 保存到 IndexedDB，并在项目模型中只保存本地资源 ID、来源 URL、提供方和外部 ID。
 6. Canvas 只绘制同源 Blob URL，保证离线重开和 PNG 导出。
 
+图片资产同时记录提供方、外部 ID、来源页面、原始图片地址和获取时间。来源信息随 IndexedDB 自动保存和 .acgdna.json 项目文件保留。
+
 禁止把第三方热链 URL 作为项目图片的唯一引用。
 
-## Bangumi 后续预留用途
+## Bangumi 网关边界
 
-Bangumi 中文词典与元数据不进入第一版。后续如启用，仍遵守以下边界：
+- 搜索词长度限制为 2 至 80 个字符，每次最多返回 18 项。
+- 搜索响应除可用图片外还返回最多 8 个 Bangumi 原始名称，供 AniList 日文名称回退。
+- 第一阶段只开放角色和动画两类搜索。
+- 图片代理只接受 HTTPS 的 lain.bgm.tv/pic/ 路径，最大 15 MB，并校验响应图片类型。
+- 网关不接收项目内容、用户画像、账号或设备标识。
+- 不把 Bangumi 图片直接作为 Canvas 热链；选中后必须下载为 Blob 并保存到当前本地项目。
+- 网关源码随 Web 项目公开，部署地址可通过 VITE_BANGUMI_GATEWAY_URL 替换。
+- 当前正式网关域名为 `https://bangumi-api.acg-dna.top`；`workers.dev` 地址只作为 Cloudflare 内部部署入口，不再作为前端默认地址。
 
-- 可使用已保留的本地压缩词典做中文、繁简、拼音和别名匹配。
-- 可调用 Bangumi API 补充条目元数据和来源链接。
-- 不直接导入 lain.bgm.tv 图片到 Canvas。
-- 如果未来 Bangumi CDN 增加稳定 CORS，可重新测试后启用。
-- 如仍无 CORS，只能让用户手动下载后上传，或在取得用户授权后单独评估代理；不得悄悄加入第三方 CORS 代理。
+## 版权边界
+
+API 可访问不代表图片获得再许可。界面必须显示来源和版权提示；仓库、模板和演示数据不得内置从 Bangumi 或 AniList 下载的第三方图片。用户只有在确认拥有相应权利时才应选择并导出图片。产品不提供第三方图片可商用的保证，也不提供公共作品托管、云同步或批量下载。
 
 ## 统一结果模型建议
 

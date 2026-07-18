@@ -2,6 +2,7 @@ import { createContext, useContext, type Dispatch } from 'react'
 
 import type { EditorAction, EditorState } from './editorReducer'
 import type { ProjectSummary } from './persistence'
+import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 
 export interface ProjectExport {
   blob: Blob
@@ -12,6 +13,10 @@ export interface EditorContextValue {
   state: EditorState
   dispatch: Dispatch<EditorAction>
   attachImage: (nodeId: string, file: File) => Promise<string | null>
+  attachOnlineImage: (
+    nodeId: string,
+    result: OnlineImageSearchResult,
+  ) => Promise<string | null>
   removeImage: (nodeId: string) => void
   attachProfileAvatar: (file: File) => Promise<string | null>
   removeProfileAvatar: () => void

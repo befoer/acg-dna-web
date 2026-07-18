@@ -2,6 +2,8 @@ import { parseGraphDocument, type GraphDocument } from '../domain/graph'
 import {
   isAcceptedLocalImageMimeType,
   MAX_LOCAL_IMAGE_BYTES,
+  readImageAssetSource,
+  type ImageAssetSource,
   type StoredLocalImageAsset,
 } from './assets'
 import type { PersistedEditorSnapshot } from './persistence'
@@ -18,6 +20,7 @@ interface SerializedProjectAsset {
   mimeType: string
   byteLength: number
   dataBase64: string
+  source?: ImageAssetSource
 }
 
 interface SerializedProjectFile {
@@ -94,6 +97,7 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
   const mimeType = readNonEmptyString(record, 'mimeType', path)
   const byteLength = record.byteLength
   const dataBase64 = record.dataBase64
+  const source = readImageAssetSource(record.source)
 
   if (!isAcceptedLocalImageMimeType(mimeType)) {
     throw new ProjectFileError(path + '.mimeType 不是支持的图片格式')
@@ -134,6 +138,7 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
     mimeType,
     byteLength,
     blob: new Blob([bytes], { type: mimeType }),
+    ...(source ? { source } : {}),
   }
 }
 
@@ -173,6 +178,7 @@ export async function serializeProjectFile(
       mimeType: asset.mimeType,
       byteLength: asset.byteLength,
       dataBase64: await encodeBlob(asset.blob),
+      ...(asset.source ? { source: asset.source } : {}),
     })),
   )
   const serialized = JSON.stringify(

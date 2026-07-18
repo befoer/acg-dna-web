@@ -10,8 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
-    "format": "prettier --write .github src eslint.config.js vite.config.ts package.json tsconfig.json tsconfig.app.json tsconfig.node.json index.html .prettierrc.json README.md THIRD_PARTY_NOTICES.md docs/CODEX_HANDOFF.md docs/MVP_SCOPE.md docs/ONLINE_IMAGE_SEARCH.md",
-    "format:check": "prettier --check .github src eslint.config.js vite.config.ts package.json tsconfig.json tsconfig.app.json tsconfig.node.json index.html .prettierrc.json README.md THIRD_PARTY_NOTICES.md docs/CODEX_HANDOFF.md docs/MVP_SCOPE.md docs/ONLINE_IMAGE_SEARCH.md",
+    "format": "prettier --write .github src worker wrangler.jsonc eslint.config.js vite.config.ts package.json tsconfig.json tsconfig.app.json tsconfig.node.json index.html .prettierrc.json README.md THIRD_PARTY_NOTICES.md docs/CODEX_HANDOFF.md docs/MVP_SCOPE.md docs/ONLINE_IMAGE_SEARCH.md",
+    "format:check": "prettier --check .github src worker wrangler.jsonc eslint.config.js vite.config.ts package.json tsconfig.json tsconfig.app.json tsconfig.node.json index.html .prettierrc.json README.md THIRD_PARTY_NOTICES.md docs/CODEX_HANDOFF.md docs/MVP_SCOPE.md docs/ONLINE_IMAGE_SEARCH.md",
     "test": "vitest run",
     "test:watch": "vitest"
   },

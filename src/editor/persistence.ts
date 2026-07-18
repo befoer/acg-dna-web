@@ -1,6 +1,7 @@
 import { parseGraphDocument, type GraphDocument } from '../domain/graph'
 import {
   storeLocalImageAsset,
+  readImageAssetSource,
   type LocalImageAsset,
   type StoredLocalImageAsset,
 } from './assets'
@@ -233,12 +234,14 @@ function parseProjectAssetRecord(
   if (!isStoredAsset(value)) return null
   const record = value as StoredProjectAssetRecord
   if (record.projectId !== projectId) return null
+  const source = readImageAssetSource(record.source)
   return {
     id: record.id,
     fileName: record.fileName,
     mimeType: record.mimeType,
     byteLength: record.byteLength,
     blob: record.blob,
+    ...(source ? { source } : {}),
   }
 }
 
