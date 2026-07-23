@@ -527,6 +527,27 @@ describe('editor reducer', () => {
     ).toEqual(DEFAULT_IMAGE_TRANSFORM)
   })
 
+  it('uses a supplied initial transform for an attached online image', () => {
+    const state = createInitialEditorState(createStarterGraph(NOW))
+    const attached = editorReducer(state, {
+      type: 'asset-attached',
+      nodeId: 'attribute-story',
+      asset: createTestAsset('asset-top-focus'),
+      imageTransform: {
+        ...DEFAULT_IMAGE_TRANSFORM,
+        offsetY: 1,
+      },
+      at: NOW,
+    })
+
+    expect(
+      findGraphNode(attached.document, 'attribute-story')?.node.imageTransform,
+    ).toEqual({
+      ...DEFAULT_IMAGE_TRANSFORM,
+      offsetY: 1,
+    })
+  })
+
   it('updates and resets one category appearance with undo support', () => {
     const state = createInitialEditorState(createStarterGraph(NOW))
     const updated = editorReducer(state, {
@@ -585,6 +606,10 @@ describe('editor reducer', () => {
       },
     })
     expect(applied.document.profile.subTemplateId).toBe('cute_pink_2')
+    expect(applied.document.canvas.labelSettings).toMatchObject({
+      colorOverride: '#AB9496',
+      textColorOverride: '#FFFFFF',
+    })
     expect(applied.document.categories).toBe(state.document.categories)
     expect(applied.assets).toBe(state.assets)
     expect(applied.history.past).toHaveLength(1)
@@ -595,6 +620,30 @@ describe('editor reducer', () => {
     })
     expect(undone.document.canvas.templateId).toBe('custom')
     expect(undone.document.canvas.width).toBe(1380)
+  })
+
+  it('applies the APP industrial label colors and clears them for custom', () => {
+    const state = createInitialEditorState(createStarterGraph(NOW))
+    const industrial = editorReducer(state, {
+      type: 'template-applied',
+      templateId: 'endfield',
+      at: NOW,
+    })
+
+    expect(industrial.document.canvas.labelSettings).toMatchObject({
+      colorOverride: '#000000',
+      textColorOverride: '#EBEBEB',
+    })
+
+    const custom = editorReducer(industrial, {
+      type: 'template-applied',
+      templateId: 'custom',
+      at: '2026-07-15T12:00:01.000Z',
+    })
+    expect(custom.document.canvas.labelSettings).toMatchObject({
+      colorOverride: '#000000',
+      textColorOverride: '#EBEBEB',
+    })
   })
 
   it('coalesces rapid changes to the same content-bounds control', () => {

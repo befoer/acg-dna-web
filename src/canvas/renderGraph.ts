@@ -79,6 +79,33 @@ function fitLayoutToBounds(
   layout.roots.forEach(transformNode)
 }
 
+function fitGravityLayoutToBounds(
+  layout: BasicLayoutResult,
+  width: number,
+  height: number,
+): void {
+  if (layout.roots.length === 0) return
+
+  const left = Math.min(...layout.roots.map((node) => node.x - node.radius))
+  const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
+  const right = Math.max(...layout.roots.map((node) => node.x + node.radius))
+  const bottom = Math.max(...layout.roots.map((node) => node.y + node.radius))
+  const occupiedWidth = Math.max(1, right - left)
+  const occupiedHeight = Math.max(1, bottom - top)
+  const scale = Math.min(width / occupiedWidth, height / occupiedHeight)
+  const sourceCenterX = (left + right) / 2
+  const targetCenterX = width / 2
+  const targetBottom = height
+
+  const transformNode = (node: LayoutNode): void => {
+    node.x = targetCenterX + (node.x - sourceCenterX) * scale
+    node.y = targetBottom + (node.y - bottom) * scale
+    node.radius *= scale
+    node.children.forEach(transformNode)
+  }
+  layout.roots.forEach(transformNode)
+}
+
 export function createGraphLayout(document: GraphDocument): BasicLayoutResult {
   const bounds = document.canvas.contentBounds
   const left = bounds.left * document.canvas.width
@@ -102,7 +129,11 @@ export function createGraphLayout(document: GraphDocument): BasicLayoutResult {
     document.canvas.layoutMode === 'gravity'
       ? createGravityLayout(document, options)
       : createBasicLayout(document, options)
-  fitLayoutToBounds(layout, width, height)
+  if (document.canvas.layoutMode === 'gravity') {
+    fitGravityLayoutToBounds(layout, width, height)
+  } else {
+    fitLayoutToBounds(layout, width, height)
+  }
   const translateNode = (node: LayoutNode) => {
     node.x += left
     node.y += top
@@ -176,12 +207,15 @@ function nodeFontSize(node: LayoutNode): number {
 function drawNodeLabel(
   context: CanvasRenderingContext2D,
   node: LayoutNode,
-  hasImage: boolean,
   settings: GraphLabelSettings,
 ): void {
   const fontSize = nodeFontSize(node)
-  const textColor =
-    settings.textColorOverride ?? (hasImage ? '#FFFFFF' : '#242429')
+  const isContainer =
+    node.children.length > 0 &&
+    (node.kind === 'category' || node.kind === 'attribute')
+  const textColor = isContainer
+    ? (settings.colorOverride ?? node.color)
+    : (settings.textColorOverride ?? '#242429')
   const fontFamily = getGraphFontCssFamily(settings)
   const maxWidth = Math.max(30, node.radius * 1.48)
   context.save()
@@ -189,32 +223,55 @@ function drawNodeLabel(
   context.textBaseline = 'middle'
   context.fillStyle = textColor
   context.font = `${settings.fontWeight} ${fontSize}px ${fontFamily}`
-  if (hasImage) {
-    context.shadowColor = 'rgba(0, 0, 0, 0.6)'
-    context.shadowBlur = Math.max(5, fontSize * 0.35)
-    context.shadowOffsetY = 2
+  if (isContainer) {
+    context.fillText(node.name || '未命名', node.x, node.y - node.radius)
+    context.restore()
+    return
   }
 
   const lines = splitLabel(context, node.name || '未命名', maxWidth)
-  const isContainer = node.children.length > 0
-  const startY = isContainer
-    ? node.y - node.radius + fontSize * 1.45
-    : node.y - ((lines.length - 1) * fontSize * 0.58 + fontSize * 0.14)
+  const startY =
+    node.y - ((lines.length - 1) * fontSize * 0.58 + fontSize * 0.14)
   lines.forEach((line, index) => {
     context.fillText(line, node.x, startY + index * fontSize * 1.1, maxWidth)
   })
 
-  if (!isContainer && node.radius >= 48) {
-    context.shadowBlur = hasImage ? 4 : 0
-    context.font = `${Math.max(300, settings.fontWeight - 100)} ${Math.max(12, fontSize * 0.58)}px ${fontFamily}`
-    context.globalAlpha = 0.82
-    context.fillText(
-      `${Math.round(node.value)}`,
-      node.x,
-      startY + lines.length * fontSize * 1.04,
-    )
-  }
   context.restore()
+}
+
+function drawNodeStroke(
+  context: CanvasRenderingContext2D,
+  node: LayoutNode,
+  color: string,
+  strokeAlpha: number,
+  strokeWidth: number,
+  settings: GraphLabelSettings,
+  hasTopLabel: boolean,
+): void {
+  if (strokeWidth <= 0) return
+
+  context.beginPath()
+  context.lineWidth = strokeWidth
+  context.strokeStyle = hexToRgba(color, strokeAlpha)
+  if (hasTopLabel) {
+    const fontSize = nodeFontSize(node)
+    const fontFamily = getGraphFontCssFamily(settings)
+    context.font = `${settings.fontWeight} ${fontSize}px ${fontFamily}`
+    const gapWidth =
+      context.measureText(node.name || '未命名').width + fontSize * 0.5
+    const gapAngle = gapWidth / Math.max(1, node.radius)
+    context.lineCap = 'round'
+    context.arc(
+      node.x,
+      node.y,
+      node.radius,
+      -Math.PI / 2 + gapAngle / 2,
+      -Math.PI / 2 + Math.PI * 2 - gapAngle / 2,
+    )
+  } else {
+    context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+  }
+  context.stroke()
 }
 
 function drawNode(
@@ -243,12 +300,20 @@ function drawNode(
     node.kind === 'category'
       ? settings.showCategoryImage
       : settings.showLabelImages
+  const isContainer =
+    node.children.length > 0 &&
+    (node.kind === 'category' || node.kind === 'attribute')
   const asset =
     showsNodeImage && node.imageAssetId ? assets[node.imageAssetId] : undefined
+  const renderedAsset = isContainer ? undefined : asset
   const color = settings.colorOverride ?? node.color
-  const fillAlpha =
-    node.kind === 'category' ? 0.09 : node.kind === 'attribute' ? 0.2 : 0.82
-  const strokeAlpha = node.kind === 'category' ? 0.62 : 0.72
+  const showText =
+    node.kind === 'category'
+      ? settings.showCategoryText
+      : settings.showLabelText
+  const shouldDrawLabel = showText && drawNodeText && !renderedAsset
+  const fillAlpha = getGraphTemplate(document.canvas.templateId).labelFillAlpha
+  const strokeAlpha = isContainer ? 0.7 : 1
   const strokeWidth =
     (node.kind === 'category'
       ? settings.categoryStrokeWidth
@@ -256,17 +321,19 @@ function drawNode(
     (canvasWidth / 1000)
 
   context.save()
-  context.beginPath()
-  context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
-  context.fillStyle = hexToRgba(color, fillAlpha * settings.fillOpacity)
-  context.fill()
+  if (!isContainer) {
+    context.beginPath()
+    context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+    context.fillStyle = hexToRgba(color, fillAlpha * settings.fillOpacity)
+    context.fill()
+  }
 
-  if (asset) {
+  if (renderedAsset) {
     context.save()
     context.clip()
     drawTransformedImageCover(
       context,
-      asset.image,
+      renderedAsset.image,
       node.x - node.radius,
       node.y - node.radius,
       node.radius * 2,
@@ -288,32 +355,18 @@ function drawNode(
         node.radius * 2,
       )
     }
-    const overlay = context.createLinearGradient(
-      node.x,
-      node.y - node.radius,
-      node.x,
-      node.y + node.radius,
-    )
-    overlay.addColorStop(0, 'rgba(10, 10, 14, 0.04)')
-    overlay.addColorStop(0.58, 'rgba(10, 10, 14, 0.12)')
-    overlay.addColorStop(1, 'rgba(10, 10, 14, 0.68)')
-    context.fillStyle = overlay
-    context.fillRect(
-      node.x - node.radius,
-      node.y - node.radius,
-      node.radius * 2,
-      node.radius * 2,
-    )
     context.restore()
   }
 
-  context.beginPath()
-  context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
-  if (strokeWidth > 0) {
-    context.lineWidth = strokeWidth
-    context.strokeStyle = hexToRgba(color, strokeAlpha)
-    context.stroke()
-  }
+  drawNodeStroke(
+    context,
+    node,
+    color,
+    strokeAlpha,
+    strokeWidth,
+    settings,
+    isContainer && shouldDrawLabel,
+  )
   context.restore()
 
   node.children.forEach((child) =>
@@ -327,12 +380,8 @@ function drawNode(
       drawNodeText,
     ),
   )
-  const showText =
-    node.kind === 'category'
-      ? settings.showCategoryText
-      : settings.showLabelText
-  if (showText && drawNodeText) {
-    drawNodeLabel(context, node, Boolean(asset), settings)
+  if (shouldDrawLabel) {
+    drawNodeLabel(context, node, settings)
   }
 
   if (node.id === selectedNodeId) {
@@ -503,6 +552,9 @@ export function renderGraph(
   }
   const template = getGraphTemplate(document.canvas.templateId)
   const layout = options.layout ?? createGraphLayout(document)
+  const strokeReferenceWidth =
+    (document.canvas.contentBounds.right - document.canvas.contentBounds.left) *
+    width
   const drawDataLayer = () => {
     if (template.showCanvasText) drawHeader(context, document)
     context.save()
@@ -517,7 +569,7 @@ export function renderGraph(
           assets,
           options.selectedNodeId,
           document,
-          width,
+          strokeReferenceWidth,
           options.drawNodeText ?? true,
         ),
       )

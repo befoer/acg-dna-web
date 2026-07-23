@@ -11,6 +11,48 @@ export interface TransformedImagePlacement {
   rotationRadians: number
 }
 
+/**
+ * Keeps the complete source image inside the crop rectangle. This is used
+ * for AniList square portraits so they are not enlarged by a cover crop.
+ */
+export function calculateContainedImagePlacement(
+  sourceWidth: number,
+  sourceHeight: number,
+  cropX: number,
+  cropY: number,
+  cropWidth: number,
+  cropHeight: number,
+  transform: GraphImageTransform = DEFAULT_IMAGE_TRANSFORM,
+): TransformedImagePlacement {
+  const safeSourceWidth = Math.max(1, sourceWidth)
+  const safeSourceHeight = Math.max(1, sourceHeight)
+  const safeCropWidth = Math.max(1, cropWidth)
+  const safeCropHeight = Math.max(1, cropHeight)
+  const normalized = normalizeImageTransform(transform)
+  const rotationRadians = (normalized.rotation * Math.PI) / 180
+  const cosine = Math.abs(Math.cos(rotationRadians))
+  const sine = Math.abs(Math.sin(rotationRadians))
+  const rotatedWidth = safeSourceWidth * cosine + safeSourceHeight * sine
+  const rotatedHeight = safeSourceWidth * sine + safeSourceHeight * cosine
+  const scale =
+    Math.min(safeCropWidth / rotatedWidth, safeCropHeight / rotatedHeight) *
+    normalized.zoom
+  const width = safeSourceWidth * scale
+  const height = safeSourceHeight * scale
+  const availableWidth = Math.max(0, safeCropWidth - rotatedWidth * scale)
+  const availableHeight = Math.max(0, safeCropHeight - rotatedHeight * scale)
+
+  return {
+    centerX:
+      cropX + safeCropWidth / 2 + normalized.offsetX * (availableWidth / 2),
+    centerY:
+      cropY + safeCropHeight / 2 + normalized.offsetY * (availableHeight / 2),
+    width,
+    height,
+    rotationRadians,
+  }
+}
+
 export function normalizeImageTransform(
   transform: GraphImageTransform | undefined,
 ): GraphImageTransform {
@@ -111,6 +153,40 @@ export function drawTransformedImageCover(
   const sourceHeight = image.naturalHeight || image.height
   if (sourceWidth <= 0 || sourceHeight <= 0) return
   const placement = calculateTransformedImagePlacement(
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    width,
+    height,
+    transform,
+  )
+  context.save()
+  context.translate(placement.centerX, placement.centerY)
+  context.rotate(placement.rotationRadians)
+  context.drawImage(
+    image,
+    -placement.width / 2,
+    -placement.height / 2,
+    placement.width,
+    placement.height,
+  )
+  context.restore()
+}
+
+export function drawTransformedImageContain(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  transform?: GraphImageTransform,
+): void {
+  const sourceWidth = image.naturalWidth || image.width
+  const sourceHeight = image.naturalHeight || image.height
+  if (sourceWidth <= 0 || sourceHeight <= 0) return
+  const placement = calculateContainedImagePlacement(
     sourceWidth,
     sourceHeight,
     x,

@@ -31,6 +31,53 @@ export interface ImageAssetSource {
   sourceUrl: string
   originalUrl: string
   fetchedAt: string
+  searchSeed?: OnlineImageSearchResult
+}
+
+function readOnlineImageSearchSeed(
+  value: unknown,
+): OnlineImageSearchResult | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (
+    record.provider !== 'bangumi' ||
+    (record.kind !== 'character' && record.kind !== 'anime') ||
+    typeof record.externalId !== 'string' ||
+    !record.externalId.trim() ||
+    typeof record.name !== 'string' ||
+    !record.name.trim() ||
+    typeof record.thumbnailUrl !== 'string' ||
+    !record.thumbnailUrl.startsWith('https://') ||
+    typeof record.downloadUrl !== 'string' ||
+    !record.downloadUrl.startsWith('https://') ||
+    typeof record.originalUrl !== 'string' ||
+    !record.originalUrl.startsWith('https://') ||
+    typeof record.sourceUrl !== 'string' ||
+    !record.sourceUrl.startsWith('https://')
+  ) {
+    return undefined
+  }
+  const optionalText = (field: string): string | undefined => {
+    const text = record[field]
+    return typeof text === 'string' && text.trim() ? text : undefined
+  }
+  return {
+    provider: 'bangumi',
+    externalId: record.externalId,
+    kind: record.kind,
+    name: record.name,
+    ...(optionalText('nativeName')
+      ? { nativeName: optionalText('nativeName') }
+      : {}),
+    ...(optionalText('alternateName')
+      ? { alternateName: optionalText('alternateName') }
+      : {}),
+    ...(optionalText('subtitle') ? { subtitle: optionalText('subtitle') } : {}),
+    thumbnailUrl: record.thumbnailUrl,
+    downloadUrl: record.downloadUrl,
+    originalUrl: record.originalUrl,
+    sourceUrl: record.sourceUrl,
+  }
 }
 
 export function readImageAssetSource(
@@ -38,6 +85,7 @@ export function readImageAssetSource(
 ): ImageAssetSource | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const record = value as Record<string, unknown>
+  const searchSeed = readOnlineImageSearchSeed(record.searchSeed)
   if (
     (record.provider !== 'bangumi' && record.provider !== 'anilist') ||
     typeof record.externalId !== 'string' ||
@@ -57,6 +105,7 @@ export function readImageAssetSource(
     sourceUrl: record.sourceUrl,
     originalUrl: record.originalUrl,
     fetchedAt: record.fetchedAt,
+    ...(searchSeed ? { searchSeed } : {}),
   }
 }
 
@@ -123,6 +172,7 @@ function safeRemoteFileName(result: OnlineImageSearchResult, mimeType: string) {
 export async function loadOnlineImageAsset(
   result: OnlineImageSearchResult,
   signal?: AbortSignal,
+  searchSeed?: OnlineImageSearchResult,
 ): Promise<LocalImageAsset> {
   let response: Response
   try {
@@ -148,6 +198,12 @@ export async function loadOnlineImageAsset(
   if (blob.size <= 0 || blob.size > MAX_LOCAL_IMAGE_BYTES) {
     throw new LocalImageError('在线图片为空或超过 15 MB')
   }
+  const resolvedSearchSeed =
+    searchSeed?.provider === 'bangumi'
+      ? searchSeed
+      : result.provider === 'bangumi'
+        ? result
+        : undefined
   return createRuntimeImageAsset({
     id: createEntityId('asset'),
     fileName: safeRemoteFileName(result, mimeType),
@@ -160,6 +216,7 @@ export async function loadOnlineImageAsset(
       sourceUrl: result.sourceUrl,
       originalUrl: result.originalUrl,
       fetchedAt: new Date().toISOString(),
+      ...(resolvedSearchSeed ? { searchSeed: resolvedSearchSeed } : {}),
     },
   })
 }

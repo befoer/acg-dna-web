@@ -9,10 +9,14 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
+import { createGraphLayout } from './canvas/renderGraph'
 import { createStarterGraph } from './domain/graph'
 import type { ProjectRepository } from './editor/persistence'
 
 describe('local editor flow', () => {
+  const renderLegacyEditorFixture = () =>
+    render(<App initialDocument={createStarterGraph()} />)
+
   beforeEach(() => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900)
@@ -25,7 +29,7 @@ describe('local editor flow', () => {
 
   it('edits a selected node and adds a third-level child', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const nameInput = screen.getByLabelText('名称')
     expect(nameInput).toHaveValue('叙事氛围')
@@ -46,9 +50,82 @@ describe('local editor flow', () => {
     expect(screen.getByLabelText('名称')).toHaveValue('镜头语言')
   })
 
+  it('opens contextual actions around the selected canvas node', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    expect(
+      screen.queryByRole('toolbar', { name: '属性圈操作' }),
+    ).not.toBeInTheDocument()
+    const graph = createStarterGraph()
+    const target = createGraphLayout(graph).flatNodes.find(
+      (node) => node.name === '叙事氛围',
+    )
+    expect(target).toBeDefined()
+    const canvas = screen.getByRole('img', { name: /属性图预览/ })
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: graph.canvas.width,
+      bottom: graph.canvas.height,
+      width: graph.canvas.width,
+      height: graph.canvas.height,
+      toJSON: () => ({}),
+    })
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1,
+      clientX: target?.x,
+      clientY: (target?.y ?? 0) - (target?.radius ?? 0) * 0.55,
+    })
+
+    const actions = await screen.findByRole('toolbar', {
+      name: '属性圈操作',
+    })
+    await user.click(
+      within(actions).getByRole('button', { name: '调整标签图片' }),
+    )
+    expect(
+      await screen.findByRole('dialog', { name: '在线选择图片' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '关闭' }))
+
+    fireEvent.pointerDown(canvas, {
+      pointerId: 2,
+      clientX: target?.x,
+      clientY: (target?.y ?? 0) - (target?.radius ?? 0) * 0.55,
+    })
+    const childActions = await screen.findByRole('toolbar', {
+      name: '属性圈操作',
+    })
+    await user.click(
+      within(childActions).getByRole('button', { name: '添加子标签' }),
+    )
+    expect(
+      await screen.findByRole('dialog', { name: '添加子属性' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    fireEvent.pointerDown(canvas, {
+      pointerId: 3,
+      clientX: target?.x,
+      clientY: (target?.y ?? 0) - (target?.radius ?? 0) * 0.55,
+    })
+    const deleteActions = await screen.findByRole('toolbar', {
+      name: '属性圈操作',
+    })
+    await user.click(
+      within(deleteActions).getByRole('button', { name: '删除标签' }),
+    )
+    await waitFor(() =>
+      expect(screen.getByLabelText('名称')).not.toHaveValue('叙事氛围'),
+    )
+  })
+
   it('switches layout and changes only the preview zoom', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const layout = screen.getByRole('combobox', { name: '布局方式' })
     expect(layout).toHaveValue('gravity')
@@ -65,7 +142,7 @@ describe('local editor flow', () => {
 
   it('applies local templates and edits the shared label range', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const toolRail = screen.getByRole('navigation', {
       name: '编辑器工具',
@@ -102,7 +179,7 @@ describe('local editor flow', () => {
 
   it('switches the compact appearance sections without adding main tools', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const toolRail = screen.getByRole('navigation', {
       name: '编辑器工具',
@@ -127,7 +204,7 @@ describe('local editor flow', () => {
 
   it('shows the effective custom text visibility in the shared layer list', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
     const toolRail = screen.getByRole('navigation', {
       name: '编辑器工具',
     })
@@ -150,7 +227,7 @@ describe('local editor flow', () => {
 
   it('edits the shared APP profile panel with local-only data', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const toolRail = screen.getByRole('navigation', {
       name: '编辑器工具',
@@ -180,7 +257,7 @@ describe('local editor flow', () => {
   })
 
   it('edits weight from the compact slider beside each node name', () => {
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const slider = screen.getByRole('slider', { name: '叙事氛围 权重' })
     const row = slider.closest<HTMLElement>('.tree-row')
@@ -198,7 +275,7 @@ describe('local editor flow', () => {
 
   it('collapses and expands category data without deleting it', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     await user.click(screen.getByRole('button', { name: '折叠 动画偏好' }))
     expect(screen.queryByText('叙事氛围')).not.toBeInTheDocument()
@@ -208,7 +285,7 @@ describe('local editor flow', () => {
 
   it('imports and previews APP-compatible text data', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     await user.click(screen.getByRole('button', { name: '导入文字' }))
     expect(
@@ -236,7 +313,7 @@ describe('local editor flow', () => {
 
   it('edits and resets global label settings from the data panel', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     await user.click(screen.getByRole('button', { name: '全局设置' }))
     expect(screen.getByLabelText('全局标签设置')).toBeInTheDocument()
@@ -296,7 +373,7 @@ describe('local editor flow', () => {
 
   it('fits the full logical canvas and enlarges only its CSS preview size', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const canvas = screen.getByRole('img', { name: /属性图预览/ })
     await waitFor(() => {
@@ -471,7 +548,7 @@ describe('local editor flow', () => {
 
   it('undoes and redoes edits with buttons and keyboard shortcuts', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    renderLegacyEditorFixture()
 
     const projectName = screen.getByRole('textbox', { name: '项目名称' })
     const undo = screen.getByRole('button', { name: '撤销' })

@@ -5,6 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalImageAsset } from '../editor/assets'
 import { LocalImageEditor } from './LocalImageEditor'
 
+const searchMock = vi.hoisted(() => vi.fn())
+
+vi.mock('../search/onlineImageSearch', async () => {
+  const actual = await vi.importActual('../search/onlineImageSearch')
+  return { ...actual, searchOnlineImages: searchMock }
+})
+
 function createAsset(): LocalImageAsset {
   const blob = new Blob(['image'], { type: 'image/png' })
   return {
@@ -24,9 +31,68 @@ function createAsset(): LocalImageAsset {
 }
 
 describe('local image editor', () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    searchMock.mockReset()
+    vi.restoreAllMocks()
+  })
 
-  it('edits zoom, position, and rotation before applying once', async () => {
+  it('uses the chosen Bangumi result to load AniList avatar candidates', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    const bangumiResult = {
+      provider: 'bangumi' as const,
+      externalId: '32',
+      kind: 'character' as const,
+      name: '小叽',
+      nativeName: 'ちぃ',
+      alternateName: 'ちぃ',
+      thumbnailUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=32',
+      downloadUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=32',
+      originalUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
+      sourceUrl: 'https://bgm.tv/character/32',
+    }
+    const anilistResult = {
+      provider: 'anilist' as const,
+      externalId: '123',
+      kind: 'character' as const,
+      name: 'Chii',
+      thumbnailUrl:
+        'https://s4.anilist.co/file/anilistcdn/character/large/123.jpg',
+      downloadUrl:
+        'https://s4.anilist.co/file/anilistcdn/character/large/123.jpg',
+      originalUrl:
+        'https://s4.anilist.co/file/anilistcdn/character/large/123.jpg',
+      sourceUrl: 'https://anilist.co/character/123',
+    }
+    searchMock.mockResolvedValue({
+      provider: 'anilist',
+      results: [anilistResult],
+    })
+    const onSelectOnlineImage = vi.fn().mockResolvedValue(true)
+    render(
+      <LocalImageEditor
+        asset={createAsset()}
+        cropShape={'circle'}
+        title={'调整头像'}
+        onlineImageSeed={bangumiResult}
+        onSelectOnlineImage={onSelectOnlineImage}
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    )
+
+    await screen.findByText('Chii')
+    expect(screen.getByText('图片候选')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /小叽/ })).toBeInTheDocument()
+    expect(searchMock).toHaveBeenCalledWith(
+      'ちぃ',
+      'character',
+      expect.objectContaining({ provider: 'anilist' }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: /Chii/ }))
+    expect(onSelectOnlineImage).toHaveBeenCalledWith(anilistResult)
+  })
+
+  it('scales from a corner before applying once', async () => {
     const context = {
       setTransform: vi.fn(),
       clearRect: vi.fn(),
@@ -40,6 +106,7 @@ describe('local image editor', () => {
       translate: vi.fn(),
       rotate: vi.fn(),
       drawImage: vi.fn(),
+      fill: vi.fn(),
       stroke: vi.fn(),
     } as unknown as CanvasRenderingContext2D
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context)
@@ -55,21 +122,23 @@ describe('local image editor', () => {
       />,
     )
 
-    fireEvent.change(screen.getByRole('slider', { name: '缩放' }), {
-      target: { value: '175' },
+    const handle = screen.getByRole('button', {
+      name: '拖拽缩放图片（top-left）',
     })
-    fireEvent.change(screen.getByRole('slider', { name: '水平位置' }), {
-      target: { value: '40' },
+    fireEvent.pointerDown(handle, {
+      pointerId: 2,
+      clientX: 100,
+      clientY: 100,
     })
-    await user.click(screen.getByRole('button', { name: '↷ 右转 90°' }))
+    fireEvent.pointerMove(handle, {
+      pointerId: 2,
+      clientX: 40,
+      clientY: 40,
+    })
+    fireEvent.pointerUp(handle, { pointerId: 2 })
     await user.click(screen.getByRole('button', { name: '应用' }))
 
-    expect(onApply).toHaveBeenCalledWith({
-      zoom: 1.75,
-      offsetX: 0.4,
-      offsetY: 0,
-      rotation: 90,
-    })
+    expect(onApply.mock.calls[0]![0].zoom).toBeGreaterThan(1)
   })
 
   it('resets an existing transform without changing the original asset', async () => {
@@ -153,7 +222,7 @@ describe('local image editor', () => {
     })
   })
 
-  it('zooms with the mouse wheel and the drag handle', async () => {
+  it('zooms with the bottom-right corner handle', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     const onApply = vi.fn()
     const user = userEvent.setup()
@@ -166,10 +235,10 @@ describe('local image editor', () => {
         onApply={onApply}
       />,
     )
-    const canvas = screen.getByLabelText('图片裁切预览')
-    const handle = screen.getByRole('button', { name: '拖拽缩放图片' })
+    const handle = screen.getByRole('button', {
+      name: '拖拽缩放图片（bottom-right）',
+    })
 
-    fireEvent.wheel(canvas, { deltaY: -100 })
     fireEvent.pointerDown(handle, {
       pointerId: 2,
       clientX: 100,
@@ -186,6 +255,6 @@ describe('local image editor', () => {
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ zoom: expect.any(Number) }),
     )
-    expect(onApply.mock.calls[0]![0].zoom).toBeGreaterThan(1.5)
+    expect(onApply.mock.calls[0]![0].zoom).toBeGreaterThan(1)
   })
 })

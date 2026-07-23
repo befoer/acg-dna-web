@@ -4,6 +4,7 @@ import { downloadGraphPng } from '../canvas/renderGraph'
 import { useEditor } from '../editor/editorContext'
 import { AppearancePanel } from './AppearancePanel'
 import { EditorPanel } from './EditorPanel'
+import type { CanvasNodeActionRequest } from './canvasNodeActions'
 import { GraphCanvas } from './GraphCanvas'
 import { ProjectManager } from './ProjectManager'
 import { ProfilePanel } from './ProfilePanel'
@@ -134,11 +135,13 @@ function DownloadIcon() {
 }
 
 export function EditorWorkspace() {
-  const { state, dispatch, retrySave } = useEditor()
+  const { state, dispatch, removeNode, retrySave } = useEditor()
   const [isExporting, setIsExporting] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
   const [activePanel, setActivePanel] = useState<EditorPanelId>('data')
   const [contentBoundsEditing, setContentBoundsEditing] = useState(false)
+  const [canvasNodeAction, setCanvasNodeAction] =
+    useState<CanvasNodeActionRequest | null>(null)
   const persistenceText = persistenceStatusText(state.persistence)
   const canUndo = state.history.past.length > 0
   const canRedo = state.history.future.length > 0
@@ -160,7 +163,10 @@ export function EditorWorkspace() {
         onContentBoundsEditingChange={setContentBoundsEditing}
       />
     ) : (
-      <EditorPanel />
+      <EditorPanel
+        canvasNodeAction={canvasNodeAction}
+        onCanvasNodeActionHandled={() => setCanvasNodeAction(null)}
+      />
     )
 
   useEffect(() => {
@@ -396,11 +402,19 @@ export function EditorWorkspace() {
             showContentBounds={
               activePanel === 'appearance' && contentBoundsEditing
             }
+            onNodeAction={(request) => {
+              if (request.action === 'delete') {
+                removeNode(request.nodeId)
+                return
+              }
+              setActivePanel('data')
+              setCanvasNodeAction(request)
+            }}
           />
           <p className="canvas-hint">
             {contentBoundsEditing
               ? '拖动虚线框内部移动范围 · 拖四角或边框调整大小'
-              : '点击气泡或装饰图片选择 · 选中图片后可拖动和缩放'}
+              : '点击气泡打开快捷操作 · 点击装饰图片后可拖动和缩放'}
           </p>
         </section>
       </main>

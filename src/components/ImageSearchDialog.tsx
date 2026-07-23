@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import {
-  OnlineImageSearchError,
   searchOnlineImages,
   type OnlineImageKind,
   type OnlineImageProvider,
@@ -9,212 +8,187 @@ import {
 } from '../search/onlineImageSearch'
 
 interface ImageSearchDialogProps {
+  cacheKey?: string
   initialQuery: string
   onClose: () => void
   onSelect: (result: OnlineImageSearchResult) => Promise<boolean>
 }
 
-const FALLBACK_BUTTON_DELAY_MS = 5_000
-const AUTO_FALLBACK_DELAY_MS = 10_000
+interface ImageSearchSession {
+  query: string
+  kind: OnlineImageKind
+  provider: OnlineImageProvider
+  results: OnlineImageSearchResult[]
+  message: string
+  japaneseQuery?: string
+}
+
+const imageSearchSessions = new Map<string, ImageSearchSession>()
+const MAX_IMAGE_SEARCH_SESSIONS = 200
 
 export function ImageSearchDialog({
+  cacheKey,
   initialQuery,
   onClose,
   onSelect,
 }: ImageSearchDialogProps) {
-  const [query, setQuery] = useState(initialQuery)
-  const [kind, setKind] = useState<OnlineImageKind>('character')
-  const [results, setResults] = useState<OnlineImageSearchResult[]>([])
+  const previousSession = cacheKey ? imageSearchSessions.get(cacheKey) : null
+  const [query, setQuery] = useState(previousSession?.query ?? initialQuery)
+  const [kind, setKind] = useState<OnlineImageKind>(
+    previousSession?.kind ?? 'character',
+  )
+  const [provider, setProvider] = useState<OnlineImageProvider>(
+    previousSession?.provider ?? 'bangumi',
+  )
+  const [results, setResults] = useState<OnlineImageSearchResult[]>(
+    previousSession?.results ?? [],
+  )
   const [message, setMessage] = useState(
-    '优先搜索 Bangumi；找不到时会自动使用 AniList。',
+    previousSession?.message ??
+      '优先使用 Bangumi；没有合适结果时可改用 AniList。',
+  )
+  const [japaneseQuery, setJapaneseQuery] = useState(
+    previousSession?.japaneseQuery,
   )
   const [searching, setSearching] = useState(false)
-  const [fallbackAvailable, setFallbackAvailable] = useState(false)
   const [selectingId, setSelectingId] = useState<string | null>(null)
-  const bangumiAbortRef = useRef<AbortController | null>(null)
-  const anilistAbortRef = useRef<AbortController | null>(null)
-  const fallbackTimerRef = useRef<number | null>(null)
-  const autoFallbackTimerRef = useRef<number | null>(null)
-  const searchSequenceRef = useRef(0)
-  const activeProviderRef = useRef<OnlineImageProvider>('bangumi')
-  const bangumiHintsRef = useRef<string[]>([])
-  const bangumiDirectSucceededRef = useRef(false)
-  const isAniListActive = () => activeProviderRef.current === 'anilist'
-
-  const clearFallbackTimers = () => {
-    if (fallbackTimerRef.current !== null) {
-      window.clearTimeout(fallbackTimerRef.current)
-      fallbackTimerRef.current = null
-    }
-    if (autoFallbackTimerRef.current !== null) {
-      window.clearTimeout(autoFallbackTimerRef.current)
-      autoFallbackTimerRef.current = null
-    }
-  }
+  const searchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(
     () => () => {
-      bangumiAbortRef.current?.abort()
-      anilistAbortRef.current?.abort()
-      clearFallbackTimers()
+      searchAbortRef.current?.abort()
     },
     [],
   )
 
-  const runAniList = async (
-    sequence: number,
-    originalQuery: string,
-    reason: 'manual' | 'timeout' | 'empty' | 'unavailable' | 'hint',
-  ) => {
-    if (sequence !== searchSequenceRef.current) return
-    clearFallbackTimers()
-    setFallbackAvailable(false)
-    activeProviderRef.current = 'anilist'
-    anilistAbortRef.current?.abort()
-    const controller = new AbortController()
-    anilistAbortRef.current = controller
-    const candidates = Array.from(
-      new Set(
-        bangumiHintsRef.current.length > 0
-          ? bangumiHintsRef.current.slice(0, 2)
-          : [originalQuery],
-      ),
-    )
-    setSearching(true)
-    setMessage(
-      reason === 'timeout'
-        ? 'Bangumi 等待超过 10 秒，正在自动切换 AniList…'
-        : '正在搜索 AniList…',
-    )
-    try {
-      for (const candidate of candidates) {
-        const response = await searchOnlineImages(candidate, kind, {
-          provider: 'anilist',
-          signal: controller.signal,
-        })
-        if (
-          controller.signal.aborted ||
-          sequence !== searchSequenceRef.current ||
-          activeProviderRef.current !== 'anilist'
-        ) {
-          return
-        }
-        if (response.results.length > 0) {
-          setResults(response.results)
-          setMessage(
-            candidate === originalQuery
-              ? `找到 ${response.results.length} 张图片 · AniList`
-              : `${bangumiDirectSucceededRef.current ? 'Bangumi 文字直连成功；' : ''}已使用 Bangumi 名称「${candidate}」找到 ${response.results.length} 张 AniList 图片`,
-          )
-          return
-        }
-      }
-      setResults([])
-      setMessage(
-        bangumiDirectSucceededRef.current
-          ? 'Bangumi 文字直连成功，但 AniList 未找到与该名称匹配的图片。'
-          : reason === 'unavailable'
-            ? 'Bangumi 文字直连失败；AniList 未找到与关键词匹配的内容。'
-            : 'AniList 未找到与关键词匹配的内容。',
-      )
-    } catch (error) {
-      if (controller.signal.aborted || sequence !== searchSequenceRef.current) {
-        return
-      }
-      const suffix =
-        error instanceof OnlineImageSearchError && error.retryAfterSeconds
-          ? `，约 ${error.retryAfterSeconds} 秒后重试`
-          : ''
-      setMessage(
-        (error instanceof Error ? error.message : '图片搜索失败') + suffix,
-      )
-      setResults([])
-    } finally {
-      if (
-        !controller.signal.aborted &&
-        sequence === searchSequenceRef.current &&
-        activeProviderRef.current === 'anilist'
-      ) {
-        setSearching(false)
-      }
+  const saveSession = (next: Partial<ImageSearchSession> = {}): void => {
+    if (!cacheKey) return
+    imageSearchSessions.delete(cacheKey)
+    imageSearchSessions.set(cacheKey, {
+      query,
+      kind,
+      provider,
+      results,
+      message,
+      ...(japaneseQuery ? { japaneseQuery } : {}),
+      ...next,
+    })
+    while (imageSearchSessions.size > MAX_IMAGE_SEARCH_SESSIONS) {
+      const oldestKey = imageSearchSessions.keys().next().value
+      if (!oldestKey) break
+      imageSearchSessions.delete(oldestKey)
     }
   }
 
-  const runBangumi = async () => {
-    const normalized = query.trim()
-    if (normalized.length < 2) {
-      setMessage('请至少输入 2 个字符。')
+  const runSearch = async (
+    nextProvider: OnlineImageProvider = provider,
+    nextQuery: string = query,
+  ) => {
+    const normalized = nextQuery.trim()
+    if (normalized.length < 1) {
+      setMessage('请输入搜索名称。')
       return
     }
-    searchSequenceRef.current += 1
-    const sequence = searchSequenceRef.current
-    clearFallbackTimers()
-    bangumiAbortRef.current?.abort()
-    anilistAbortRef.current?.abort()
+    const providerLabel = nextProvider === 'bangumi' ? 'Bangumi' : 'AniList'
+    searchAbortRef.current?.abort()
     const controller = new AbortController()
-    bangumiAbortRef.current = controller
-    bangumiHintsRef.current = []
-    bangumiDirectSucceededRef.current = false
-    activeProviderRef.current = 'bangumi'
+    searchAbortRef.current = controller
+    setProvider(nextProvider)
+    setQuery(normalized)
     setResults([])
-    setFallbackAvailable(false)
     setSearching(true)
-    setMessage('正在搜索 Bangumi…')
-    fallbackTimerRef.current = window.setTimeout(() => {
-      if (
-        sequence === searchSequenceRef.current &&
-        activeProviderRef.current === 'bangumi'
-      ) {
-        setFallbackAvailable(true)
-        setMessage('Bangumi 等待超过 5 秒，可以切换到 AniList。')
-      }
-    }, FALLBACK_BUTTON_DELAY_MS)
-    autoFallbackTimerRef.current = window.setTimeout(() => {
-      if (
-        sequence === searchSequenceRef.current &&
-        activeProviderRef.current === 'bangumi'
-      ) {
-        void runAniList(sequence, normalized, 'timeout')
-      }
-    }, AUTO_FALLBACK_DELAY_MS)
+    setMessage(`正在搜索 ${providerLabel}…`)
     try {
       const response = await searchOnlineImages(normalized, kind, {
-        provider: 'bangumi',
+        provider: nextProvider,
         signal: controller.signal,
       })
-      if (controller.signal.aborted || sequence !== searchSequenceRef.current) {
+      if (controller.signal.aborted) {
         return
       }
-      bangumiHintsRef.current = response.queryHints ?? []
-      bangumiDirectSucceededRef.current = response.bangumiTransport === 'direct'
-      if (isAniListActive()) {
-        if (response.queryHints?.length) {
-          void runAniList(sequence, normalized, 'hint')
-        }
-        return
-      }
-      clearFallbackTimers()
-      setFallbackAvailable(false)
       setResults(response.results)
+      const nextJapaneseQuery =
+        nextProvider === 'bangumi'
+          ? response.results.find((result) => result.nativeName?.trim())
+              ?.nativeName
+          : japaneseQuery
+      setJapaneseQuery(nextJapaneseQuery)
       if (response.results.length > 0) {
-        setMessage(`找到 ${response.results.length} 张图片 · Bangumi`)
-        setSearching(false)
+        const nextMessage = `找到 ${response.results.length} 个 ${providerLabel} 结果。`
+        setMessage(nextMessage)
+        saveSession({
+          query: normalized,
+          kind,
+          provider: nextProvider,
+          results: response.results,
+          message: nextMessage,
+          japaneseQuery: nextJapaneseQuery,
+        })
       } else {
-        void runAniList(sequence, normalized, 'empty')
+        const nextMessage =
+          nextProvider === 'bangumi'
+            ? 'Bangumi 没有找到结果，可切换 AniList 或补充名称后重试。'
+            : 'AniList 没有找到结果，请尝试日文名、罗马音或切换 Bangumi。'
+        setMessage(nextMessage)
+        saveSession({
+          query: normalized,
+          kind,
+          provider: nextProvider,
+          results: [],
+          message: nextMessage,
+          japaneseQuery: nextJapaneseQuery,
+        })
       }
-    } catch {
-      if (controller.signal.aborted || sequence !== searchSequenceRef.current) {
-        return
-      }
-      if (activeProviderRef.current === 'bangumi') {
-        void runAniList(sequence, normalized, 'unavailable')
-      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      const nextMessage =
+        error instanceof Error ? error.message : `${providerLabel} 搜索失败`
+      setMessage(nextMessage)
+      setResults([])
+      saveSession({
+        query: normalized,
+        kind,
+        provider: nextProvider,
+        results: [],
+        message: nextMessage,
+      })
+    } finally {
+      if (!controller.signal.aborted) setSearching(false)
     }
   }
-
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    void runBangumi()
+    void runSearch()
+  }
+
+  const switchProvider = (nextProvider: OnlineImageProvider) => {
+    if (searching || nextProvider === provider) return
+    const nextQuery =
+      provider === 'bangumi' &&
+      nextProvider === 'anilist' &&
+      japaneseQuery?.trim()
+        ? japaneseQuery
+        : query
+    if (nextQuery.trim()) {
+      void runSearch(nextProvider, nextQuery)
+      return
+    }
+    setProvider(nextProvider)
+  }
+
+  const changeKind = (nextKind: OnlineImageKind) => {
+    if (searching || nextKind === kind) return
+    setKind(nextKind)
+    setResults([])
+    setJapaneseQuery(undefined)
+    setMessage(
+      nextKind === 'character' ? '已切换到角色搜索。' : '已切换到动画搜索。',
+    )
+  }
+
+  const updateQuery = (nextQuery: string) => {
+    setQuery(nextQuery)
+    if (nextQuery.trim() !== query.trim()) setJapaneseQuery(undefined)
   }
 
   const selectResult = async (result: OnlineImageSearchResult) => {
@@ -247,14 +221,14 @@ export function ImageSearchDialog({
           <button
             type="button"
             className={kind === 'character' ? 'is-active' : ''}
-            onClick={() => setKind('character')}
+            onClick={() => changeKind('character')}
           >
             角色
           </button>
           <button
             type="button"
             className={kind === 'anime' ? 'is-active' : ''}
-            onClick={() => setKind('anime')}
+            onClick={() => changeKind('anime')}
           >
             动画
           </button>
@@ -267,7 +241,7 @@ export function ImageSearchDialog({
             maxLength={80}
             autoFocus
             placeholder={kind === 'character' ? '输入角色名称' : '输入动画名称'}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => updateQuery(event.currentTarget.value)}
           />
           <button className="primary-button" type="submit" disabled={searching}>
             {searching ? '搜索中…' : '搜索'}
@@ -275,53 +249,94 @@ export function ImageSearchDialog({
         </form>
 
         <div className="image-search-status">
-          <span>{message}</span>
-          {fallbackAvailable ? (
-            <button
-              type="button"
-              className="compact-button"
-              onClick={() =>
-                void runAniList(
-                  searchSequenceRef.current,
-                  query.trim(),
-                  'manual',
-                )
-              }
-            >
-              AniList 备用搜索
-            </button>
-          ) : null}
+          <div className="image-search-status-copy">
+            <span>{message}</span>
+            {!searching && query.trim() ? (
+              <div className="image-search-hints">
+                <span>没有合适结果？</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    switchProvider(
+                      provider === 'bangumi' ? 'anilist' : 'bangumi',
+                    )
+                  }
+                >
+                  {provider === 'bangumi'
+                    ? '改用 AniList 搜索'
+                    : '改用 Bangumi 搜索'}
+                </button>
+                {japaneseQuery && japaneseQuery.trim() !== query.trim() ? (
+                  <button
+                    type="button"
+                    title={`使用日文原名“${japaneseQuery}”搜索 ${
+                      provider === 'bangumi' ? 'Bangumi' : 'AniList'
+                    }`}
+                    onClick={() => void runSearch(provider, japaneseQuery)}
+                  >
+                    搜日文
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="image-search-results" aria-live="polite">
-          {results.map((result) => {
-            const key = result.provider + ':' + result.externalId
-            return (
-              <article className="image-search-result" key={key}>
-                <button
-                  type="button"
-                  className="image-search-result-select"
-                  disabled={selectingId !== null}
-                  onClick={() => void selectResult(result)}
+          <div className="image-search-results-flow">
+            {results.map((result) => {
+              const key = result.provider + ':' + result.externalId
+              return (
+                <article
+                  className={
+                    'image-search-result is-' +
+                    result.provider +
+                    ' is-' +
+                    result.kind
+                  }
+                  key={key}
                 >
-                  <img src={result.thumbnailUrl} alt="" loading="lazy" />
-                  <strong>{result.name}</strong>
-                  {result.alternateName &&
-                  result.alternateName !== result.name ? (
-                    <span>{result.alternateName}</span>
-                  ) : null}
-                  {result.subtitle ? <small>{result.subtitle}</small> : null}
-                  <em>
-                    {result.provider === 'bangumi' ? 'Bangumi' : 'AniList'}
-                  </em>
-                  {selectingId === key ? <b>正在保存…</b> : null}
-                </button>
-                <a href={result.sourceUrl} target="_blank" rel="noreferrer">
-                  查看来源
-                </a>
-              </article>
-            )
-          })}
+                  <button
+                    type="button"
+                    className="image-search-result-select"
+                    disabled={selectingId !== null}
+                    onClick={() => void selectResult(result)}
+                  >
+                    <img
+                      crossOrigin="anonymous"
+                      src={result.thumbnailUrl}
+                      alt=""
+                      loading="lazy"
+                    />
+                    <strong>{result.name}</strong>
+                    {result.alternateName &&
+                    result.alternateName !== result.name ? (
+                      <span>{result.alternateName}</span>
+                    ) : null}
+                    {result.subtitle ? <small>{result.subtitle}</small> : null}
+                    {selectingId === key ? <b>正在保存…</b> : null}
+                  </button>
+                  <a href={result.sourceUrl} target="_blank" rel="noreferrer">
+                    查看来源
+                  </a>
+                </article>
+              )
+            })}
+          </div>
+          {!searching && results.length > 0 ? (
+            <div className="image-search-bottom-hint" role="note">
+              <span>找不到？试试搜全名或日文，例如：</span>
+              <span className="image-search-hint-example is-wrong">
+                小春 <b aria-label="不推荐">×</b>
+              </span>
+              <span className="image-search-hint-example is-right">
+                下江小春 <b aria-label="推荐">✓</b>
+              </span>
+              <span className="image-search-hint-example is-right">
+                コハル <b aria-label="推荐">✓</b>
+              </span>
+            </div>
+          ) : null}
         </div>
 
         <p className="image-rights-note">

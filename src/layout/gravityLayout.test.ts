@@ -39,6 +39,26 @@ function assertSiblingsDoNotOverlap(nodes: LayoutNode[]): void {
   }
 }
 
+function childAreaRatio(parent: LayoutNode): number {
+  return (
+    parent.children.reduce(
+      (total, child) => total + child.radius * child.radius,
+      0,
+    ) /
+    (parent.radius * parent.radius)
+  )
+}
+
+function childExtentRatio(parent: LayoutNode): number {
+  return Math.max(
+    ...parent.children.map(
+      (child) =>
+        (Math.hypot(child.x - parent.x, child.y - parent.y) + child.radius) /
+        parent.radius,
+    ),
+  )
+}
+
 function assertChildrenFormContactCluster(nodes: LayoutNode[]): void {
   for (const parent of nodes) {
     const children = parent.children
@@ -75,6 +95,47 @@ function assertChildrenFormContactCluster(nodes: LayoutNode[]): void {
     }
     assertChildrenFormContactCluster(children)
   }
+}
+
+function assertNodesFormContactCluster(nodes: LayoutNode[]): void {
+  if (nodes.length <= 1) return
+  const connected = new Set<number>([0])
+  let addedNode = true
+
+  while (addedNode) {
+    addedNode = false
+    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+      if (!connected.has(leftIndex)) continue
+      const left = nodes[leftIndex]
+      if (!left) continue
+      for (let rightIndex = 0; rightIndex < nodes.length; rightIndex += 1) {
+        if (connected.has(rightIndex)) continue
+        const right = nodes[rightIndex]
+        if (!right) continue
+        const surfaceGap =
+          Math.hypot(right.x - left.x, right.y - left.y) -
+          (left.radius + right.radius)
+        if (surfaceGap <= 0.5) {
+          connected.add(rightIndex)
+          addedNode = true
+        }
+      }
+    }
+  }
+
+  const surfaceGaps = nodes.flatMap((left, leftIndex) =>
+    nodes
+      .slice(leftIndex + 1)
+      .map(
+        (right) =>
+          Math.hypot(right.x - left.x, right.y - left.y) -
+          (left.radius + right.radius),
+      ),
+  )
+  expect(
+    connected.size,
+    `surface gaps: ${surfaceGaps.map((gap) => gap.toFixed(2)).join(', ')}`,
+  ).toBe(nodes.length)
 }
 
 function assertChildrenContained(nodes: LayoutNode[]): void {
@@ -219,6 +280,120 @@ describe('deterministic gravity layout', () => {
     expectTouching('sub-world', 'sub-aftertaste')
   })
 
+  it('keeps twenty percent breathing room around a single child', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    const category = document.categories[0]!
+    category.attributes = [
+      {
+        ...category.attributes[0]!,
+        children: [],
+      },
+    ]
+    document.categories = [category]
+
+    const parent = createGravityLayout(document).roots[0]!
+
+    expect(parent.children).toHaveLength(1)
+    expect(parent.children[0]!.radius / parent.radius).toBeCloseTo(0.8, 3)
+    expect(parent.children[0]!.y).toBeGreaterThan(parent.y)
+  })
+
+  it('expands a three-child contact cluster to the parent boundary', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    const category = document.categories[0]!
+    category.attributes = [
+      {
+        ...category.attributes[0]!,
+        children: [],
+      },
+      {
+        ...category.attributes[1]!,
+        children: [],
+      },
+      {
+        id: 'attribute-third',
+        name: '第三项',
+        value: 66,
+        hidden: false,
+        children: [],
+      },
+    ]
+    document.categories = [category]
+
+    const parent = createGravityLayout(document).roots[0]!
+
+    expect(parent.children).toHaveLength(3)
+    expect(childAreaRatio(parent)).toBeCloseTo(0.6, 3)
+    expect(childExtentRatio(parent)).toBeGreaterThan(0.94)
+    expect(
+      parent.children.reduce((total, child) => total + child.y, 0) /
+        parent.children.length,
+    ).toBeGreaterThan(parent.y)
+    assertSiblingsDoNotOverlap([parent])
+  })
+
+  it('uses more of the parent area for a nine-child group', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    const category = document.categories[0]!
+    category.attributes = Array.from({ length: 9 }, (_, index) => ({
+      id: `attribute-fill-${index}`,
+      name: `标签 ${index + 1}`,
+      value: 40 + index * 6,
+      hidden: false,
+      children: [],
+    }))
+    document.categories = [category]
+
+    const parent = createGravityLayout(document).roots[0]!
+
+    expect(parent.children).toHaveLength(9)
+    expect(childAreaRatio(parent)).toBeGreaterThanOrEqual(0.659)
+    expect(childExtentRatio(parent)).toBeGreaterThan(0.97)
+    assertSiblingsDoNotOverlap([parent])
+  })
+
+  it('preserves a stronger APP-style size contrast between child weights', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    const category = document.categories[0]!
+    category.attributes = [
+      {
+        id: 'attribute-low',
+        name: '低权重',
+        value: 10,
+        hidden: false,
+        children: [],
+      },
+      {
+        id: 'attribute-middle',
+        name: '中权重',
+        value: 50,
+        hidden: false,
+        children: [],
+      },
+      {
+        id: 'attribute-high',
+        name: '高权重',
+        value: 100,
+        hidden: false,
+        children: [],
+      },
+    ]
+    document.categories = [category]
+
+    const parent = createGravityLayout(document).roots[0]!
+    const low = parent.children.find((child) => child.id === 'attribute-low')!
+    const middle = parent.children.find(
+      (child) => child.id === 'attribute-middle',
+    )!
+    const high = parent.children.find((child) => child.id === 'attribute-high')!
+
+    expect(low.radius / parent.radius).toBeCloseTo(0.15, 3)
+    expect(middle.radius).toBeGreaterThan(low.radius * 2)
+    expect(high.radius).toBeGreaterThan(low.radius * 4)
+    expect(high.radius).toBeGreaterThan(middle.radius * 1.9)
+    assertSiblingsDoNotOverlap([parent])
+  })
+
   it('forms a zero-gap contact cluster for crowded descendants', () => {
     const document = createStarterGraph('2026-07-15T00:00:00.000Z')
     const category = document.categories[0]!
@@ -320,8 +495,159 @@ describe('deterministic gravity layout', () => {
     const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
     const bottom = Math.max(...layout.roots.map((node) => node.y + node.radius))
 
-    expect((bottom - top) / (right - left)).toBeGreaterThanOrEqual(0.72)
+    const pileAspectRatio = (bottom - top) / (right - left)
+    expect(pileAspectRatio).toBeGreaterThanOrEqual(0.72)
+    expect(pileAspectRatio).toBeLessThanOrEqual(1.55)
+    expect(bottom).toBeCloseTo(layout.height * (1 - 0.065), 1)
   })
+
+  it.each([
+    [100, 70, 40],
+    [100, 55, 20],
+    [80, 75, 35],
+  ])(
+    'keeps uneven top-level values %s/%s/%s in a bottom pile',
+    (firstValue, secondValue, thirdValue) => {
+      const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+      document.categories.slice(0, 3).forEach((category, index) => {
+        category.value = [firstValue, secondValue, thirdValue][index]!
+        category.attributes = []
+      })
+      document.categories = document.categories.slice(0, 3)
+
+      const layout = createGravityLayout(document)
+      const left = Math.min(...layout.roots.map((node) => node.x - node.radius))
+      const right = Math.max(
+        ...layout.roots.map((node) => node.x + node.radius),
+      )
+      const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
+      const bottom = Math.max(
+        ...layout.roots.map((node) => node.y + node.radius),
+      )
+
+      expect(bottom).toBeCloseTo(layout.height * (1 - 0.065), 1)
+      const pileAspectRatio = (bottom - top) / (right - left)
+      expect(pileAspectRatio).toBeGreaterThanOrEqual(0.72)
+      expect(pileAspectRatio).toBeLessThanOrEqual(1.55)
+      assertSiblingsDoNotOverlap(layout.roots)
+    },
+  )
+
+  it('keeps varied three-category projects in a balanced bottom pile', () => {
+    const weights = [
+      [100, 100, 100],
+      [100, 90, 20],
+      [100, 60, 10],
+      [95, 45, 15],
+    ]
+    const documentIds = Array.from(
+      { length: 24 },
+      (_, index) => `graph-${index}`,
+    )
+
+    for (const values of weights) {
+      for (const documentId of documentIds) {
+        const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+        document.id = documentId
+        document.categories = document.categories.slice(0, 3)
+        document.categories.forEach((category, index) => {
+          category.value = values[index]!
+          category.attributes = []
+        })
+
+        const layout = createGravityLayout(document)
+        const left = Math.min(
+          ...layout.roots.map((node) => node.x - node.radius),
+        )
+        const right = Math.max(
+          ...layout.roots.map((node) => node.x + node.radius),
+        )
+        const top = Math.min(
+          ...layout.roots.map((node) => node.y - node.radius),
+        )
+        const bottom = Math.max(
+          ...layout.roots.map((node) => node.y + node.radius),
+        )
+        const pileAspectRatio = (bottom - top) / (right - left)
+
+        expect(pileAspectRatio).toBeGreaterThanOrEqual(0.72)
+        expect(pileAspectRatio).toBeLessThanOrEqual(1.55)
+        expect(bottom).toBeCloseTo(layout.height * (1 - 0.065), 1)
+        assertSiblingsDoNotOverlap(layout.roots)
+      }
+    }
+  })
+  it('forms a balanced pile for four top-level categories', () => {
+    const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+    document.categories = [
+      ...document.categories.slice(0, 3).map((category, index) => ({
+        ...category,
+        value: [100, 70, 20][index]!,
+        appearance: { fillFactor: [1.5, 1, 0.8][index]! },
+        attributes: [],
+      })),
+      {
+        id: 'category-fourth',
+        name: '第四分类',
+        value: 10,
+        color: '#6C8FF0',
+        hidden: false,
+        appearance: { fillFactor: 0.5 },
+        attributes: [],
+      },
+    ]
+
+    const layout = createGravityLayout(document)
+    const left = Math.min(...layout.roots.map((node) => node.x - node.radius))
+    const right = Math.max(...layout.roots.map((node) => node.x + node.radius))
+    const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
+    const bottom = Math.max(...layout.roots.map((node) => node.y + node.radius))
+    const pileAspectRatio = (bottom - top) / (right - left)
+
+    expect(pileAspectRatio).toBeGreaterThanOrEqual(1.05)
+    expect(pileAspectRatio).toBeLessThanOrEqual(1.45)
+    expect(bottom).toBeCloseTo(layout.height * (1 - 0.065), 1)
+    assertNodesFormContactCluster(layout.roots)
+    assertSiblingsDoNotOverlap(layout.roots)
+  })
+
+  it.each([5, 6, 8])(
+    'fills a compact range with %s top-level categories and preserves weight contrast',
+    (categoryCount) => {
+      const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+      const values = [100, 84, 68, 52, 38, 26, 16, 8]
+      document.categories = Array.from(
+        { length: categoryCount },
+        (_, index) => ({
+          id: `category-fill-${index}`,
+          name: `分类 ${index + 1}`,
+          value: values[index] ?? 8,
+          color: ['#15B8A6', '#EF6F9B', '#F09A52', '#6C8FF0'][index % 4]!,
+          hidden: false,
+          attributes: [],
+        }),
+      )
+
+      const layout = createGravityLayout(document)
+      const left = Math.min(...layout.roots.map((node) => node.x - node.radius))
+      const right = Math.max(
+        ...layout.roots.map((node) => node.x + node.radius),
+      )
+      const top = Math.min(...layout.roots.map((node) => node.y - node.radius))
+      const bottom = Math.max(
+        ...layout.roots.map((node) => node.y + node.radius),
+      )
+      const pileAspectRatio = (bottom - top) / (right - left)
+      const radii = layout.roots.map((node) => node.radius)
+
+      expect(pileAspectRatio).toBeGreaterThanOrEqual(0.72)
+      expect(pileAspectRatio).toBeLessThanOrEqual(1.55)
+      expect(bottom).toBeCloseTo(layout.height * (1 - 0.065), 1)
+      expect(Math.max(...radii) / Math.min(...radii)).toBeGreaterThan(1.6)
+      assertNodesFormContactCluster(layout.roots)
+      assertSiblingsDoNotOverlap(layout.roots)
+    },
+  )
 
   it('separates exactly overlapping circles in a repeatable direction', () => {
     const initial: CircleCollisionBody[] = [

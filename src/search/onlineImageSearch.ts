@@ -7,6 +7,7 @@ export interface OnlineImageSearchResult {
   externalId: string
   kind: OnlineImageKind
   name: string
+  nativeName?: string
   alternateName?: string
   subtitle?: string
   thumbnailUrl: string
@@ -39,10 +40,9 @@ const BANGUMI_SEARCH_MODE =
 const BANGUMI_API_URL = 'https://api.bgm.tv'
 
 const SEARCH_LIMIT = 18
-const CACHE_TTL_MS = 5 * 60 * 1000
+const MAX_CACHE_ENTRIES = 80
 
 interface CacheEntry {
-  expiresAt: number
   response: OnlineImageSearchResponse
 }
 
@@ -75,14 +75,15 @@ function parseBangumiResult(
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   try {
+    const nativeName = requiredString(record.name, '名称')
+    const chineseName = optionalString(record.alternateName)
     return {
       provider: 'bangumi',
       externalId: requiredString(String(record.id ?? ''), 'ID'),
       kind,
-      name: requiredString(record.name, '名称'),
-      ...(optionalString(record.alternateName)
-        ? { alternateName: optionalString(record.alternateName) }
-        : {}),
+      name: chineseName ?? nativeName,
+      nativeName,
+      ...(chineseName ? { alternateName: nativeName } : {}),
       ...(optionalString(record.subtitle)
         ? { subtitle: optionalString(record.subtitle) }
         : {}),
@@ -396,14 +397,23 @@ async function cachedSearch(
 ): Promise<OnlineImageSearchResponse> {
   const key = provider + ':' + kind + ':' + query.toLocaleLowerCase()
   const cached = resultCache.get(key)
-  if (cached && cached.expiresAt > Date.now()) return cached.response
+  if (cached) {
+    resultCache.delete(key)
+    resultCache.set(key, cached)
+    return cached.response
+  }
   const response =
     provider === 'bangumi'
       ? BANGUMI_SEARCH_MODE === 'direct'
         ? await searchBangumiDirect(query, kind, signal)
         : await searchBangumiGateway(query, kind, signal)
       : await searchAniList(query, kind, signal)
-  resultCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, response })
+  resultCache.set(key, { response })
+  while (resultCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = resultCache.keys().next().value
+    if (!oldestKey) break
+    resultCache.delete(oldestKey)
+  }
   return response
 }
 
@@ -416,8 +426,8 @@ export async function searchOnlineImages(
   } = {},
 ): Promise<OnlineImageSearchResponse> {
   const normalizedQuery = query.trim()
-  if (normalizedQuery.length < 2) {
-    throw new OnlineImageSearchError('请至少输入 2 个字符')
+  if (normalizedQuery.length < 1) {
+    throw new OnlineImageSearchError('请输入搜索名称')
   }
   return cachedSearch(
     options.provider ?? 'bangumi',

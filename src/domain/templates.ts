@@ -19,6 +19,11 @@ export interface GraphTemplateDefinition {
   height: number
   contentBounds: GraphContentBounds
   showCanvasText: boolean
+  labelColorOverride: string | null
+  labelTextColorOverride: string | null
+  labelFillAlpha: number
+  categoryStrokeWidth: number
+  labelStrokeWidth: number
 }
 
 export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
@@ -32,6 +37,11 @@ export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
     height: 2000,
     contentBounds: { ...DEFAULT_CONTENT_BOUNDS },
     showCanvasText: true,
+    labelColorOverride: '#000000',
+    labelTextColorOverride: '#EBEBEB',
+    labelFillAlpha: 0.6,
+    categoryStrokeWidth: 2,
+    labelStrokeWidth: 1,
   },
   {
     version: GRAPH_TEMPLATE_VERSION,
@@ -50,6 +60,11 @@ export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
       rotation: -2,
     },
     showCanvasText: false,
+    labelColorOverride: '#AB9496',
+    labelTextColorOverride: '#FFFFFF',
+    labelFillAlpha: 1,
+    categoryStrokeWidth: 5,
+    labelStrokeWidth: 2,
   },
   {
     version: GRAPH_TEMPLATE_VERSION,
@@ -68,6 +83,11 @@ export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
       rotation: 0,
     },
     showCanvasText: false,
+    labelColorOverride: '#000000',
+    labelTextColorOverride: '#EBEBEB',
+    labelFillAlpha: 0.6,
+    categoryStrokeWidth: 2,
+    labelStrokeWidth: 1,
   },
 ]
 

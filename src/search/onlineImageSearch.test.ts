@@ -22,6 +22,7 @@ describe('online image search', () => {
             {
               id: '32',
               name: 'ちぃ',
+              alternateName: '小叽',
               thumbnailUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=32',
               downloadUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=32',
               originalUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
@@ -41,11 +42,45 @@ describe('online image search', () => {
     expect(response.bangumiTransport).toBe('gateway')
     expect(response.queryHints).toEqual(['ちぃ', '小叽'])
     expect(response.results).toHaveLength(1)
+    expect(response.results[0]).toMatchObject({
+      name: '小叽',
+      nativeName: 'ちぃ',
+      alternateName: 'ちぃ',
+    })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0]?.[0].toString()).toContain(
       'https://bangumi-api.acg-dna.top/v1/search',
     )
     expect(fetchMock.mock.calls[0]?.[0].toString()).toContain('kind=character')
+  })
+
+  it('reuses a recent provider response without another API request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [], queryHints: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchOnlineImages('小叽', 'character')
+    await searchOnlineImages('小叽', 'character')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows one-character names such as 白', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ results: [], queryHints: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchOnlineImages('白', 'character')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('filters unrelated AniList popularity results for unsupported Chinese queries', async () => {

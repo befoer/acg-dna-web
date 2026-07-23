@@ -10,6 +10,11 @@ import {
   type GraphImageTransform,
 } from '../domain/graph'
 import type { LocalImageAsset } from '../editor/assets'
+import {
+  OnlineImageSearchError,
+  searchOnlineImages,
+  type OnlineImageSearchResult,
+} from '../search/onlineImageSearch'
 
 interface LocalImageEditorProps {
   asset: LocalImageAsset
@@ -17,18 +22,10 @@ interface LocalImageEditorProps {
   cropShape: 'circle' | 'square'
   cropAspectRatio?: number
   title: string
+  onlineImageSeed?: OnlineImageSearchResult
+  onSelectOnlineImage?: (result: OnlineImageSearchResult) => Promise<boolean>
   onCancel: () => void
   onApply: (transform: GraphImageTransform) => void
-}
-
-interface ImageTransformSliderProps {
-  label: string
-  value: number
-  min: number
-  max: number
-  step?: number
-  display: string
-  onChange: (value: number) => void
 }
 
 interface PointerPosition {
@@ -48,33 +45,10 @@ interface ResizeGesture {
   startX: number
   startY: number
   transform: GraphImageTransform
+  corner: ResizeCorner
 }
 
-function ImageTransformSlider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  display,
-  onChange,
-}: ImageTransformSliderProps) {
-  return (
-    <label className={'image-editor-slider'}>
-      <span>{label}</span>
-      <input
-        type={'range'}
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        aria-label={label}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-      />
-      <output>{display}</output>
-    </label>
-  )
-}
+type ResizeCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
 export function LocalImageEditor({
   asset,
@@ -82,6 +56,8 @@ export function LocalImageEditor({
   cropShape,
   cropAspectRatio = 1,
   title,
+  onlineImageSeed,
+  onSelectOnlineImage,
   onCancel,
   onApply,
 }: LocalImageEditorProps) {
@@ -95,6 +71,18 @@ export function LocalImageEditor({
   const gestureRef = useRef<ImageGesture | null>(null)
   const resizeGestureRef = useRef<ResizeGesture | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [anilistCandidates, setAniListCandidates] = useState<
+    OnlineImageSearchResult[]
+  >([])
+  const [anilistMessage, setAniListMessage] = useState(
+    '正在按日文原名搜索 AniList 头像…',
+  )
+  const [selectingAniListId, setSelectingAniListId] = useState<string | null>(
+    null,
+  )
+  const onlineImageCandidates = onlineImageSeed
+    ? [onlineImageSeed, ...anilistCandidates]
+    : anilistCandidates
   const previewAspectRatio = Math.max(0.5, Math.min(2, cropAspectRatio))
   const previewPixelWidth = 720
   const previewPixelHeight = Math.round(previewPixelWidth / previewAspectRatio)
@@ -110,6 +98,37 @@ export function LocalImageEditor({
       return value
     })
   }
+
+  useEffect(() => {
+    if (
+      !onlineImageSeed ||
+      onlineImageSeed.provider !== 'bangumi' ||
+      !onSelectOnlineImage
+    ) {
+      return
+    }
+    const controller = new AbortController()
+    const queryName = onlineImageSeed.nativeName ?? onlineImageSeed.name
+    void searchOnlineImages(queryName, onlineImageSeed.kind, {
+      provider: 'anilist',
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (controller.signal.aborted) return
+        setAniListCandidates(response.results)
+        setAniListMessage('')
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setAniListCandidates([])
+        setAniListMessage(
+          error instanceof OnlineImageSearchError
+            ? error.message
+            : 'AniList 搜索失败，可继续使用当前 Bangumi 图片。',
+        )
+      })
+    return () => controller.abort()
+  }, [onlineImageSeed, onSelectOnlineImage])
 
   const createGesture = (): ImageGesture | null => {
     const canvas = canvasRef.current
@@ -137,24 +156,6 @@ export function LocalImageEditor({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      setTransform((current) => {
-        const value = zoomImageTransform(
-          current,
-          Math.exp(-event.deltaY * 0.0015),
-        )
-        transformRef.current = value
-        return value
-      })
-    }
-    canvas.addEventListener('wheel', onWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', onWheel)
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !context) return
     const logicalWidth = 360
@@ -175,12 +176,29 @@ export function LocalImageEditor({
       }
     }
 
-    const inset = 18
+    const inset = 0
     const cropWidth = logicalWidth - inset * 2
     const cropHeight = logicalHeight - inset * 2
     const cropSize = Math.min(cropWidth, cropHeight)
+    const cropX = cropShape === 'circle' ? (logicalWidth - cropSize) / 2 : inset
+    const cropY =
+      cropShape === 'circle' ? (logicalHeight - cropSize) / 2 : inset
+    const imageWidth = cropShape === 'circle' ? cropSize : cropWidth
+    const imageHeight = cropShape === 'circle' ? cropSize : cropHeight
+    drawTransformedImageCover(
+      context,
+      asset.image,
+      cropX,
+      cropY,
+      imageWidth,
+      imageHeight,
+      transform,
+    )
+
     context.save()
+    context.fillStyle = 'rgba(0, 0, 0, 0.52)'
     context.beginPath()
+    context.rect(0, 0, logicalWidth, logicalHeight)
     if (cropShape === 'circle') {
       context.arc(
         logicalWidth / 2,
@@ -188,20 +206,12 @@ export function LocalImageEditor({
         cropSize / 2,
         0,
         Math.PI * 2,
+        true,
       )
     } else {
       context.rect(inset, inset, cropWidth, cropHeight)
     }
-    context.clip()
-    drawTransformedImageCover(
-      context,
-      asset.image,
-      inset,
-      inset,
-      cropWidth,
-      cropHeight,
-      transform,
-    )
+    context.fill('evenodd')
     context.restore()
 
     context.beginPath()
@@ -221,21 +231,11 @@ export function LocalImageEditor({
     context.stroke()
   }, [asset.image, cropShape, previewAspectRatio, transform])
 
-  const update = (patch: Partial<GraphImageTransform>) => {
-    commitTransform((current) => ({ ...current, ...patch }))
-  }
-  const rotate = (delta: number) => {
-    const rotation = transform.rotation + delta
-    update({
-      rotation:
-        rotation > 180
-          ? rotation - 360
-          : rotation < -180
-            ? rotation + 360
-            : rotation,
-    })
-  }
-
+  const defaultTransform =
+    asset.source?.provider === 'bangumi' &&
+    onlineImageSeed?.kind === 'character'
+      ? { ...DEFAULT_IMAGE_TRANSFORM, offsetY: 1 }
+      : DEFAULT_IMAGE_TRANSFORM
   const finishPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
     pointersRef.current.delete(event.pointerId)
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
@@ -244,6 +244,54 @@ export function LocalImageEditor({
     gestureRef.current = createGesture()
     setIsDragging(pointersRef.current.size > 0)
   }
+
+  const startResize = (
+    corner: ResizeCorner,
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation()
+    resizeGestureRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      transform: transformRef.current,
+      corner,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const moveResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const gesture = resizeGestureRef.current
+    if (!gesture) return
+    event.stopPropagation()
+    const deltaX = event.clientX - gesture.startX
+    const deltaY = event.clientY - gesture.startY
+    const outwardDelta =
+      gesture.corner === 'top-left'
+        ? (-deltaX - deltaY) / 2
+        : gesture.corner === 'top-right'
+          ? (deltaX - deltaY) / 2
+          : gesture.corner === 'bottom-left'
+            ? (-deltaX + deltaY) / 2
+            : (deltaX + deltaY) / 2
+    commitTransform(
+      zoomImageTransform(gesture.transform, Math.exp(outwardDelta / 120)),
+    )
+  }
+
+  const finishResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    resizeGestureRef.current = null
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const resizeCorners: ResizeCorner[] = [
+    'top-left',
+    'top-right',
+    'bottom-left',
+    'bottom-right',
+  ]
 
   return (
     <div
@@ -324,100 +372,80 @@ export function LocalImageEditor({
                 onPointerUp={finishPointer}
                 onPointerCancel={finishPointer}
               />
-              <button
-                type={'button'}
-                className={'image-editor-resize-handle'}
-                aria-label={'拖拽缩放图片'}
-                onPointerDown={(event) => {
-                  event.stopPropagation()
-                  resizeGestureRef.current = {
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    transform: transformRef.current,
-                  }
-                  event.currentTarget.setPointerCapture?.(event.pointerId)
-                }}
-                onPointerMove={(event) => {
-                  const gesture = resizeGestureRef.current
-                  if (!gesture) return
-                  event.stopPropagation()
-                  const outwardDelta =
-                    (event.clientX -
-                      gesture.startX +
-                      event.clientY -
-                      gesture.startY) /
-                    2
-                  commitTransform(
-                    zoomImageTransform(
-                      gesture.transform,
-                      Math.exp(outwardDelta / 120),
-                    ),
-                  )
-                }}
-                onPointerUp={(event) => {
-                  event.stopPropagation()
-                  resizeGestureRef.current = null
-                  if (
-                    event.currentTarget.hasPointerCapture?.(event.pointerId)
-                  ) {
-                    event.currentTarget.releasePointerCapture(event.pointerId)
-                  }
-                }}
-                onPointerCancel={() => {
-                  resizeGestureRef.current = null
-                }}
-              >
-                ↘
-              </button>
+              {resizeCorners.map((corner) => (
+                <button
+                  type={'button'}
+                  className={'image-editor-resize-handle ' + corner}
+                  aria-label={'拖拽缩放图片（' + corner + '）'}
+                  key={corner}
+                  onPointerDown={(event) => startResize(corner, event)}
+                  onPointerMove={moveResize}
+                  onPointerUp={finishResize}
+                  onPointerCancel={finishResize}
+                />
+              ))}
             </div>
             <p className={'image-editor-gesture-hint'}>
-              拖动图片定位 · 滚轮/双指或右下角手柄缩放
+              拖动图片定位 · 双指或四角手柄缩放
             </p>
             <small>{asset.fileName}</small>
           </div>
           <div className={'image-editor-controls'}>
-            <ImageTransformSlider
-              label={'缩放'}
-              value={transform.zoom * 100}
-              min={100}
-              max={400}
-              display={Math.round(transform.zoom * 100) + '%'}
-              onChange={(value) => update({ zoom: value / 100 })}
-            />
-            <ImageTransformSlider
-              label={'水平位置'}
-              value={transform.offsetX * 100}
-              min={-100}
-              max={100}
-              display={Math.round(transform.offsetX * 100) + '%'}
-              onChange={(value) => update({ offsetX: value / 100 })}
-            />
-            <ImageTransformSlider
-              label={'垂直位置'}
-              value={transform.offsetY * 100}
-              min={-100}
-              max={100}
-              display={Math.round(transform.offsetY * 100) + '%'}
-              onChange={(value) => update({ offsetY: value / 100 })}
-            />
-            <ImageTransformSlider
-              label={'旋转'}
-              value={transform.rotation}
-              min={-180}
-              max={180}
-              display={Math.round(transform.rotation) + '°'}
-              onChange={(value) => update({ rotation: value })}
-            />
-            <div className={'image-editor-rotation-actions'}>
-              <button type={'button'} onClick={() => rotate(-90)}>
-                ↶ 左转 90°
-              </button>
-              <button type={'button'} onClick={() => rotate(90)}>
-                ↷ 右转 90°
-              </button>
-            </div>
+            {onlineImageSeed?.provider === 'bangumi' && onSelectOnlineImage ? (
+              <section className={'image-editor-online-candidates'}>
+                <div className={'image-editor-online-heading'}>
+                  <strong>图片候选</strong>
+                  {anilistMessage ? <small>{anilistMessage}</small> : null}
+                </div>
+                {onlineImageCandidates.length > 0 ? (
+                  <div className={'image-editor-online-grid'}>
+                    {onlineImageCandidates.map((candidate) => {
+                      const candidateId =
+                        candidate.provider + ':' + candidate.externalId
+                      const selected =
+                        asset.source?.provider === candidate.provider &&
+                        asset.source.externalId === candidate.externalId
+                      return (
+                        <button
+                          type={'button'}
+                          className={
+                            'image-editor-online-candidate' +
+                            ' is-' +
+                            candidate.provider +
+                            ' is-' +
+                            candidate.kind +
+                            (selected ? ' is-selected' : '')
+                          }
+                          key={candidateId}
+                          disabled={selectingAniListId !== null}
+                          onClick={() => {
+                            setSelectingAniListId(candidateId)
+                            void onSelectOnlineImage(candidate).finally(() =>
+                              setSelectingAniListId(null),
+                            )
+                          }}
+                        >
+                          <img
+                            crossOrigin={'anonymous'}
+                            src={candidate.thumbnailUrl}
+                            alt={''}
+                            loading={'lazy'}
+                          />
+                          <em>
+                            {candidate.provider === 'bangumi'
+                              ? 'Bangumi'
+                              : 'AniList'}
+                          </em>
+                          <span>{candidate.name}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
             <p>
-              调整只保存裁切参数，原始图片仍保留在当前浏览器中，可以随时再次编辑。
+              拖动图片定位，拖动四角缩放。被遮罩区域仍会压暗显示，方便判断人物位置。
             </p>
           </div>
         </div>
@@ -426,7 +454,7 @@ export function LocalImageEditor({
           <button
             type={'button'}
             className={'ghost-button'}
-            onClick={() => commitTransform({ ...DEFAULT_IMAGE_TRANSFORM })}
+            onClick={() => commitTransform({ ...defaultTransform })}
           >
             重置
           </button>

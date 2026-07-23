@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  calculateContainedImagePlacement,
   calculateTransformedImagePlacement,
+  drawTransformedImageContain,
   drawTransformedImageCover,
   normalizeImageTransform,
   panImageTransform,
@@ -26,6 +28,15 @@ describe('non-destructive local image transform', () => {
       height: 100,
       rotationRadians: 0,
     })
+  })
+
+  it('keeps a square AniList source contained in a portrait workspace', () => {
+    const placement = calculateContainedImagePlacement(400, 400, 0, 0, 324, 444)
+
+    expect(placement.width).toBeCloseTo(324, 5)
+    expect(placement.height).toBeCloseTo(324, 5)
+    expect(placement.centerX).toBeCloseTo(162, 5)
+    expect(placement.centerY).toBeCloseTo(222, 5)
   })
 
   it('enlarges a square source enough to cover rotated square corners', () => {
@@ -97,6 +108,32 @@ describe('non-destructive local image transform', () => {
       zoomImageTransform({ zoom: 2, offsetX: 0, offsetY: 0, rotation: 0 }, 0.01)
         .zoom,
     ).toBe(1)
+  })
+
+  it('draws contained images through the same transform path', () => {
+    const context = {
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    const image = {
+      naturalWidth: 400,
+      naturalHeight: 400,
+      width: 400,
+      height: 400,
+    } as HTMLImageElement
+
+    drawTransformedImageContain(context, image, 0, 0, 324, 444)
+
+    expect(context.drawImage).toHaveBeenCalledWith(
+      image,
+      expect.any(Number),
+      expect.any(Number),
+      324,
+      324,
+    )
   })
 
   it('draws through the same translate and rotate path used by export', () => {

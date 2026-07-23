@@ -16,6 +16,7 @@ export interface EditorContextValue {
   attachOnlineImage: (
     nodeId: string,
     result: OnlineImageSearchResult,
+    searchSeed?: OnlineImageSearchResult,
   ) => Promise<string | null>
   removeImage: (nodeId: string) => void
   attachProfileAvatar: (file: File) => Promise<string | null>

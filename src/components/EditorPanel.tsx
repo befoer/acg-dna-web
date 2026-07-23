@@ -1,4 +1,9 @@
-import { useState, type ChangeEvent, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+} from 'react'
 
 import type {
   GraphCategory,
@@ -20,6 +25,7 @@ import { GraphTextImportDialog } from './GraphTextImportDialog'
 import { LocalImageEditor } from './LocalImageEditor'
 import { ImageSearchDialog } from './ImageSearchDialog'
 import { NodeCreateDialog } from './NodeCreateDialog'
+import type { CanvasNodeActionRequest } from './canvasNodeActions'
 
 const KIND_LABELS: Record<GraphNodeKind, string> = {
   category: '分类',
@@ -339,10 +345,14 @@ function GraphTree({ onOpenGlobalSettings }: GraphTreeProps) {
 
 interface SelectedNodeEditorProps {
   onOpenCategoryAppearance: (categoryId: string) => void
+  canvasNodeAction: CanvasNodeActionRequest | null
+  onCanvasNodeActionHandled: () => void
 }
 
 function SelectedNodeEditor({
   onOpenCategoryAppearance,
+  canvasNodeAction,
+  onCanvasNodeActionHandled,
 }: SelectedNodeEditorProps) {
   const {
     state,
@@ -364,6 +374,38 @@ function SelectedNodeEditor({
   const editorAsset = imageEditorAssetId
     ? state.assets[imageEditorAssetId]
     : undefined
+  const imageEditorOnlineSeed = editorAsset?.source?.searchSeed
+  const selectedNodeId = match?.node.id
+  const selectedNodeKind = match?.kind
+
+  useEffect(() => {
+    if (
+      !canvasNodeAction ||
+      !selectedNodeId ||
+      canvasNodeAction.nodeId !== selectedNodeId
+    ) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      if (canvasNodeAction.action === 'image') {
+        if (asset) setImageEditorAssetId(asset.id)
+        else setShowImageSearch(true)
+      } else if (
+        canvasNodeAction.action === 'child' &&
+        selectedNodeKind !== 'subAttribute'
+      ) {
+        setShowChildDialog(true)
+      }
+      onCanvasNodeActionHandled()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [
+    asset,
+    canvasNodeAction,
+    onCanvasNodeActionHandled,
+    selectedNodeId,
+    selectedNodeKind,
+  ])
 
   if (!match) {
     return (
@@ -495,7 +537,7 @@ function SelectedNodeEditor({
         <div className="image-field">
           <div>
             <span className="field-label">本地图片</span>
-            <p>{asset ? asset.fileName : '使用居中裁切填充气泡'}</p>
+            <p>{asset ? asset.fileName : '选择图片后可拖动定位并从四角缩放'}</p>
           </div>
           <div className="image-actions">
             <label className="file-button">
@@ -596,10 +638,27 @@ function SelectedNodeEditor({
       </section>
       {editorAsset && editorAsset.id === node.imageAssetId ? (
         <LocalImageEditor
+          key={editorAsset.id}
           asset={editorAsset}
           initialTransform={node.imageTransform}
           cropShape={'circle'}
+          cropAspectRatio={3 / 4}
           title={'调整' + KIND_LABELS[kind] + '图片'}
+          onlineImageSeed={imageEditorOnlineSeed}
+          onSelectOnlineImage={
+            imageEditorOnlineSeed?.provider === 'bangumi'
+              ? async (result) => {
+                  const assetId = await attachOnlineImage(
+                    node.id,
+                    result,
+                    imageEditorOnlineSeed,
+                  )
+                  if (!assetId) return false
+                  setImageEditorAssetId(assetId)
+                  return true
+                }
+              : undefined
+          }
           onCancel={() => setImageEditorAssetId(null)}
           onApply={(imageTransform) => {
             update({ imageTransform })
@@ -609,11 +668,13 @@ function SelectedNodeEditor({
       ) : null}
       {showImageSearch ? (
         <ImageSearchDialog
+          cacheKey={node.id}
           initialQuery={node.name}
           onClose={() => setShowImageSearch(false)}
           onSelect={async (result) => {
             const assetId = await attachOnlineImage(node.id, result)
             if (!assetId) return false
+            update({ name: result.name })
             setImageEditorAssetId(assetId)
             return true
           }}
@@ -634,7 +695,15 @@ function SelectedNodeEditor({
   )
 }
 
-export function EditorPanel() {
+interface EditorPanelProps {
+  canvasNodeAction?: CanvasNodeActionRequest | null
+  onCanvasNodeActionHandled?: () => void
+}
+
+export function EditorPanel({
+  canvasNodeAction = null,
+  onCanvasNodeActionHandled = () => undefined,
+}: EditorPanelProps = {}) {
   const { state, dispatch } = useEditor()
   const [showGlobalSettings, setShowGlobalSettings] = useState(false)
   const [appearanceCategoryId, setAppearanceCategoryId] = useState<
@@ -691,6 +760,8 @@ export function EditorPanel() {
       <SelectedNodeEditor
         key={state.selectedNodeId ?? 'none'}
         onOpenCategoryAppearance={setAppearanceCategoryId}
+        canvasNodeAction={canvasNodeAction}
+        onCanvasNodeActionHandled={onCanvasNodeActionHandled}
       />
       <GraphTree onOpenGlobalSettings={() => setShowGlobalSettings(true)} />
     </aside>

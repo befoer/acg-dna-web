@@ -16,7 +16,7 @@ import type {
 } from '../domain/graph'
 import {
   DEFAULT_IMAGE_TRANSFORM,
-  createStarterGraph,
+  createAppStarterGraph,
   decorationImageLayerId,
   findGraphNode,
   resolveDecorationLayerOrder,
@@ -156,6 +156,7 @@ export type EditorAction =
       nodeId: string
       asset: LocalImageAsset
       replacedAssetId?: string
+      imageTransform?: GraphImageTransform
       at: string
     }
   | { type: 'asset-removed'; nodeId: string; assetId: string; at: string }
@@ -209,7 +210,7 @@ export type EditorAction =
   | { type: 'redo'; at: string }
 
 export function createInitialEditorState(
-  document = createStarterGraph(),
+  document = createAppStarterGraph(),
 ): EditorState {
   return {
     document,
@@ -377,6 +378,7 @@ function setNodeImage(
   document: GraphDocument,
   nodeId: string,
   imageAssetId: string | undefined,
+  imageTransform: GraphImageTransform = DEFAULT_IMAGE_TRANSFORM,
 ): GraphDocument {
   return {
     ...document,
@@ -385,7 +387,7 @@ function setNodeImage(
         const next = { ...category }
         if (imageAssetId) {
           next.imageAssetId = imageAssetId
-          next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+          next.imageTransform = { ...imageTransform }
         } else {
           delete next.imageAssetId
           delete next.imageTransform
@@ -400,7 +402,7 @@ function setNodeImage(
             const next = { ...attribute }
             if (imageAssetId) {
               next.imageAssetId = imageAssetId
-              next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+              next.imageTransform = { ...imageTransform }
             } else {
               delete next.imageAssetId
               delete next.imageTransform
@@ -415,7 +417,7 @@ function setNodeImage(
               const next = { ...child }
               if (imageAssetId) {
                 next.imageAssetId = imageAssetId
-                next.imageTransform = { ...DEFAULT_IMAGE_TRANSFORM }
+                next.imageTransform = { ...imageTransform }
               } else {
                 delete next.imageAssetId
                 delete next.imageTransform
@@ -600,6 +602,13 @@ export function editorReducer(
               backgroundColor: template.backgroundColor,
               templateId: template.id,
               contentBounds: { ...template.contentBounds },
+              labelSettings: {
+                ...state.document.canvas.labelSettings,
+                colorOverride: template.labelColorOverride,
+                textColorOverride: template.labelTextColorOverride,
+                categoryStrokeWidth: template.categoryStrokeWidth,
+                labelStrokeWidth: template.labelStrokeWidth,
+              },
             },
             profile: {
               ...state.document.profile,
@@ -952,7 +961,12 @@ export function editorReducer(
       if (action.replacedAssetId) delete assets[action.replacedAssetId]
       return markDirty(state, {
         document: touchDocument(
-          setNodeImage(state.document, action.nodeId, action.asset.id),
+          setNodeImage(
+            state.document,
+            action.nodeId,
+            action.asset.id,
+            action.imageTransform,
+          ),
           action.at,
         ),
         assets,

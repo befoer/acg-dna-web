@@ -51,7 +51,7 @@ Bangumi API 文档：https://bangumi.github.io/api/
 
 ## AniList API
 
-本项目计划使用 AniList GraphQL API 做非商业、按需的图片搜索，不进行批量抓取或数据囤积。必须遵守其使用条款和限流要求。
+本项目使用 AniList GraphQL API 做按需的角色头像和动画封面候选搜索，不进行批量抓取或数据囤积。图片只在用户明确选择后下载到其浏览器本地；必须遵守 AniList 使用条款和限流要求。
 
 - 使用条款：https://docs.anilist.co/guide/terms-of-use
 - 限流说明：https://docs.anilist.co/guide/rate-limiting
@@ -60,3 +60,5 @@ Bangumi API 文档：https://bangumi.github.io/api/
 
 - 为原创图形和模板确定单独的素材许可证
 - 为 Bangumi 派生数据补齐可复现的来源和生成信息
+
+当前版本不内置 Bangumi 派生词典；相关来源和 CC BY-SA 说明在未来实际引入数据前补齐。

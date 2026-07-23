@@ -10,6 +10,7 @@ import {
   DECORATION_DATA_LAYER_ID,
   GRAPH_SCHEMA_VERSION,
   GraphValidationError,
+  createAppStarterGraph,
   createStarterGraph,
   decorationCustomTextLayerId,
   decorationFrameLayerId,
@@ -22,6 +23,23 @@ import {
 } from './graph'
 
 describe('graph document schema', () => {
+  it('creates the APP default animation, character, and game circles without children', () => {
+    const document = createAppStarterGraph('2026-07-22T00:00:00.000Z')
+
+    expect(document.categories.map((category) => category.name)).toEqual([
+      '动画',
+      '角色',
+      '游戏',
+    ])
+    expect(
+      document.categories.every((category) => category.attributes.length === 0),
+    ).toBe(true)
+    expect(document.canvas.labelSettings).toMatchObject({
+      colorOverride: '#000000',
+      textColorOverride: '#EBEBEB',
+    })
+  })
+
   it('round-trips a schema v1 document', () => {
     const document = createStarterGraph('2026-07-15T00:00:00.000Z')
     const parsed = parseGraphDocument(JSON.parse(JSON.stringify(document)))

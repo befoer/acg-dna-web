@@ -37,6 +37,10 @@ import {
 } from '../canvas/decorationRenderer'
 import { useEditor } from '../editor/editorContext'
 import {
+  computeCanvasNodeActionGeometry,
+  type CanvasNodeActionRequest,
+} from './canvasNodeActions'
+import {
   DECORATION_DATA_LAYER_ID,
   customTextIdFromDecorationLayer,
   decorationFrameLayerId,
@@ -60,11 +64,13 @@ const EMPTY_DECORATION_PRESET_ASSETS: DecorationPresetAssetMap = {}
 interface GraphCanvasProps {
   zoom: number
   showContentBounds?: boolean
+  onNodeAction?: (request: CanvasNodeActionRequest) => void
 }
 
 export function GraphCanvas({
   zoom,
   showContentBounds = false,
+  onNodeAction,
 }: GraphCanvasProps) {
   const { state, dispatch } = useEditor()
   const frameRef = useRef<HTMLDivElement>(null)
@@ -113,6 +119,7 @@ export function GraphCanvas({
     rotation: number
   } | null>(null)
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 })
+  const [nodeActionMenuId, setNodeActionMenuId] = useState<string | null>(null)
   const [loadedTemplate, setLoadedTemplate] = useState<{
     templateId: string
     image: HTMLImageElement | null
@@ -280,6 +287,7 @@ export function GraphCanvas({
   }, [categoryLabelSettings, dispatch, state.document.profile])
 
   useEffect(() => {
+    layoutRef.current = layout
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !context) return
@@ -297,7 +305,6 @@ export function GraphCanvas({
       showContentBounds,
       drawNodeText: true,
     })
-    layoutRef.current = layout
     customTextRegionsRef.current = createProfileCustomTextRegions(
       context,
       state.document,
@@ -369,6 +376,43 @@ export function GraphCanvas({
     width: Math.max(frameSize.width, displayWidth + CANVAS_GUTTER * 2),
     height: Math.max(frameSize.height, displayHeight + CANVAS_GUTTER * 2),
   }
+  const selectedLayoutNode =
+    nodeActionMenuId && state.selectedNodeId === nodeActionMenuId
+      ? layout.flatNodes.find((node) => node.id === nodeActionMenuId)
+      : undefined
+  const nodeActionGeometry = computeCanvasNodeActionGeometry(
+    selectedLayoutNode ? selectedLayoutNode.radius * displayScale : 0,
+  )
+  const nodeActionMenuStyle = selectedLayoutNode
+    ? ({
+        left: selectedLayoutNode.x * displayScale,
+        top: selectedLayoutNode.y * displayScale,
+      } as CSSProperties)
+    : undefined
+  const nodeActionButtonStyle = (angleDegrees: number): CSSProperties => {
+    const angle = (angleDegrees * Math.PI) / 180
+    return {
+      transform:
+        'translate(-50%, -50%) translate(' +
+        Math.cos(angle) * nodeActionGeometry.distance +
+        'px, ' +
+        Math.sin(angle) * nodeActionGeometry.distance +
+        'px)',
+    }
+  }
+  const hidesChildAction = selectedLayoutNode?.kind === 'subAttribute'
+  const imageActionAngle = hidesChildAction
+    ? (nodeActionGeometry.angles[0] + nodeActionGeometry.angles[1]) / 2
+    : nodeActionGeometry.angles[0]
+  const deleteActionAngle = hidesChildAction
+    ? (nodeActionGeometry.angles[1] + nodeActionGeometry.angles[2]) / 2
+    : nodeActionGeometry.angles[2]
+  const showNodeActionMenu =
+    Boolean(selectedLayoutNode) &&
+    !showContentBounds &&
+    !state.editingDecorationImageId &&
+    !state.editingDecorationFrameId &&
+    !state.editingCustomTextId
 
   useEffect(() => {
     const frame = frameRef.current
@@ -394,6 +438,7 @@ export function GraphCanvas({
     const currentLayout = layoutRef.current
     const point = canvasPoint(event)
     if (!canvas || !currentLayout || !point) return
+    setNodeActionMenuId(null)
     activePointersRef.current.set(event.pointerId, {
       x: point.x,
       y: point.y,
@@ -654,6 +699,7 @@ export function GraphCanvas({
       if (layerId === DECORATION_DATA_LAYER_ID && node) {
         activePointersRef.current.delete(event.pointerId)
         dispatch({ type: 'node-selected', nodeId: node.id })
+        setNodeActionMenuId(node.id)
         return
       }
     }
@@ -998,27 +1044,94 @@ export function GraphCanvas({
   return (
     <div className="canvas-frame" ref={frameRef}>
       <div className="canvas-surface" style={surfaceStyle}>
-        <canvas
-          ref={canvasRef}
-          className={
-            'graph-canvas' +
-            (state.editingDecorationImageId || state.editingDecorationFrameId
-              ? ' is-editing-decoration'
-              : '') +
-            (showContentBounds ? ' is-editing-bounds' : '')
-          }
-          style={canvasStyle}
-          width={state.document.canvas.width}
-          height={state.document.canvas.height}
-          role="img"
-          tabIndex={0}
-          aria-label={`${state.document.name} 的属性图预览；点击元素可选择，方向键可微调选中的装饰元素`}
-          onKeyDown={nudgeSelectedElement}
-          onPointerDown={selectAtPointer}
-          onPointerMove={dragCanvasElement}
-          onPointerUp={finishCanvasElementDrag}
-          onPointerCancel={finishCanvasElementDrag}
-        />
+        <div
+          className="canvas-node-layer"
+          style={{ width: displayWidth, height: displayHeight }}
+        >
+          <canvas
+            ref={canvasRef}
+            className={
+              'graph-canvas' +
+              (state.editingDecorationImageId || state.editingDecorationFrameId
+                ? ' is-editing-decoration'
+                : '') +
+              (showContentBounds ? ' is-editing-bounds' : '')
+            }
+            style={canvasStyle}
+            width={state.document.canvas.width}
+            height={state.document.canvas.height}
+            role="img"
+            tabIndex={0}
+            aria-label={`${state.document.name} 的属性图预览；点击元素可选择，方向键可微调选中的装饰元素`}
+            onKeyDown={nudgeSelectedElement}
+            onPointerDown={selectAtPointer}
+            onPointerMove={dragCanvasElement}
+            onPointerUp={finishCanvasElementDrag}
+            onPointerCancel={finishCanvasElementDrag}
+          />
+          {showNodeActionMenu && selectedLayoutNode && onNodeAction ? (
+            <div
+              className="canvas-node-action-menu"
+              style={nodeActionMenuStyle}
+              role="toolbar"
+              aria-label="属性圈操作"
+            >
+              <button
+                type="button"
+                className="canvas-node-action is-image"
+                style={nodeActionButtonStyle(imageActionAngle)}
+                aria-label="调整标签图片"
+                title="调整标签图片"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  setNodeActionMenuId(null)
+                  onNodeAction({
+                    nodeId: selectedLayoutNode.id,
+                    action: 'image',
+                  })
+                }}
+              >
+                图片
+              </button>
+              {!hidesChildAction ? (
+                <button
+                  type="button"
+                  className="canvas-node-action is-child"
+                  style={nodeActionButtonStyle(nodeActionGeometry.angles[1])}
+                  aria-label="添加子标签"
+                  title="添加子标签"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    setNodeActionMenuId(null)
+                    onNodeAction({
+                      nodeId: selectedLayoutNode.id,
+                      action: 'child',
+                    })
+                  }}
+                >
+                  子标签
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="canvas-node-action is-delete"
+                style={nodeActionButtonStyle(deleteActionAngle)}
+                aria-label="删除标签"
+                title="删除标签"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  setNodeActionMenuId(null)
+                  onNodeAction({
+                    nodeId: selectedLayoutNode.id,
+                    action: 'delete',
+                  })
+                }}
+              >
+                删除
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   )

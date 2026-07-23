@@ -619,6 +619,50 @@ export function createStarterGraph(
   }
 }
 
+export function createAppStarterGraph(
+  now = new Date().toISOString(),
+): GraphDocument {
+  const document = createStarterGraph(now)
+  return {
+    ...document,
+    name: '未命名属性图',
+    canvas: {
+      ...document.canvas,
+      labelSettings: {
+        ...document.canvas.labelSettings,
+        colorOverride: '#000000',
+        textColorOverride: '#EBEBEB',
+      },
+    },
+    categories: [
+      {
+        id: 'category-animation',
+        name: '动画',
+        value: 100,
+        color: '#000000',
+        hidden: false,
+        attributes: [],
+      },
+      {
+        id: 'category-character',
+        name: '角色',
+        value: 100,
+        color: '#000000',
+        hidden: false,
+        attributes: [],
+      },
+      {
+        id: 'category-game',
+        name: '游戏',
+        value: 100,
+        color: '#000000',
+        hidden: false,
+        attributes: [],
+      },
+    ],
+  }
+}
+
 export function createCategory(index: number): GraphCategory {
   return {
     id: createEntityId('category'),

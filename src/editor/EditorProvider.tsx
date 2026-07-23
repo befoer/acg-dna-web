@@ -10,8 +10,9 @@ import {
 
 import {
   collectNodeImageAssetIds,
+  createAppStarterGraph,
   createEntityId,
-  createStarterGraph,
+  DEFAULT_IMAGE_TRANSFORM,
   findGraphNode,
   type GraphDocument,
 } from '../domain/graph'
@@ -621,7 +622,7 @@ export function EditorProvider({
       await flushCurrentProject()
       const savedAt = new Date().toISOString()
       const document = {
-        ...createStarterGraph(savedAt),
+        ...createAppStarterGraph(savedAt),
         id: createEntityId('graph'),
         name: '未命名属性图',
       }
@@ -778,7 +779,7 @@ export function EditorProvider({
         } else {
           const savedAt = new Date().toISOString()
           const document = {
-            ...createStarterGraph(savedAt),
+            ...createAppStarterGraph(savedAt),
             id: createEntityId('graph'),
             name: '未命名属性图',
           }
@@ -885,7 +886,11 @@ export function EditorProvider({
   }, [])
 
   const attachOnlineImage = useCallback(
-    async (nodeId: string, result: OnlineImageSearchResult) => {
+    async (
+      nodeId: string,
+      result: OnlineImageSearchResult,
+      searchSeed?: OnlineImageSearchResult,
+    ) => {
       if (projectActionPendingRef.current) {
         dispatch({
           type: 'status-changed',
@@ -897,7 +902,7 @@ export function EditorProvider({
       imageRequestTokensRef.current.set(nodeId, requestToken)
       dispatch({ type: 'status-changed', message: '正在下载并保存在线图片…' })
       try {
-        const asset = await loadOnlineImageAsset(result)
+        const asset = await loadOnlineImageAsset(result, undefined, searchSeed)
         const currentState = stateRef.current
         const currentToken = imageRequestTokensRef.current.get(nodeId)
         const target = findGraphNode(currentState.document, nodeId)
@@ -912,6 +917,14 @@ export function EditorProvider({
           type: 'asset-attached',
           nodeId,
           asset,
+          imageTransform: {
+            ...DEFAULT_IMAGE_TRANSFORM,
+            offsetY:
+              result.provider === 'bangumi' &&
+              (searchSeed?.kind ?? result.kind) === 'character'
+                ? 1
+                : 0,
+          },
           ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
           at: new Date().toISOString(),
         })
