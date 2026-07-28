@@ -1,6 +1,6 @@
 export type OnlineImageProvider = 'bangumi' | 'anilist'
 
-export type OnlineImageKind = 'character' | 'anime'
+export type OnlineImageKind = 'character' | 'anime' | 'game' | 'singer'
 
 export interface OnlineImageSearchResult {
   provider: OnlineImageProvider
@@ -28,6 +28,16 @@ export interface OnlineImageSearchResponse {
   }
 }
 
+export interface OnlineWorkSearchResult {
+  externalId: string
+  name: string
+  nativeName?: string
+  alternateName?: string
+  subjectType: 1 | 2 | 4
+  thumbnailUrl: string
+  sourceUrl: string
+}
+
 export const DEFAULT_BANGUMI_GATEWAY_URL = 'https://bangumi-api.acg-dna.top'
 
 const BANGUMI_GATEWAY_URL = (
@@ -47,6 +57,7 @@ interface CacheEntry {
 }
 
 const resultCache = new Map<string, CacheEntry>()
+const workResultCache = new Map<string, OnlineWorkSearchResult[]>()
 
 export class OnlineImageSearchError extends Error {
   retryAfterSeconds: number | null
@@ -55,6 +66,23 @@ export class OnlineImageSearchError extends Error {
     super(message)
     this.name = 'OnlineImageSearchError'
     this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+async function fetchSearchResponse(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  unavailableMessage: string,
+): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch (error) {
+    if (isAbortError(error)) throw error
+    throw new OnlineImageSearchError(unavailableMessage)
   }
 }
 
@@ -77,13 +105,21 @@ function parseBangumiResult(
   try {
     const nativeName = requiredString(record.name, '名称')
     const chineseName = optionalString(record.alternateName)
+    const foreignName = optionalString(record.foreignName)
+    const displayName = chineseName ?? nativeName
+    const secondaryName =
+      foreignName && foreignName !== displayName
+        ? foreignName
+        : chineseName && nativeName !== displayName
+          ? nativeName
+          : undefined
     return {
       provider: 'bangumi',
       externalId: requiredString(String(record.id ?? ''), 'ID'),
       kind,
-      name: chineseName ?? nativeName,
+      name: displayName,
       nativeName,
-      ...(chineseName ? { alternateName: nativeName } : {}),
+      ...(secondaryName ? { alternateName: secondaryName } : {}),
       ...(optionalString(record.subtitle)
         ? { subtitle: optionalString(record.subtitle) }
         : {}),
@@ -91,6 +127,30 @@ function parseBangumiResult(
       downloadUrl: requiredString(record.downloadUrl, '下载地址'),
       originalUrl: requiredString(record.originalUrl, '原始图片地址'),
       sourceUrl: requiredString(record.sourceUrl, '来源页面'),
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseBangumiWorkResult(value: unknown): OnlineWorkSearchResult | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Record<string, unknown>
+  try {
+    const nativeName = requiredString(record.name, '作品名称')
+    const chineseName = optionalString(record.alternateName)
+    const subjectType = Number(record.subjectType)
+    if (![1, 2, 4].includes(subjectType)) return null
+    return {
+      externalId: requiredString(String(record.id ?? ''), '作品 ID'),
+      name: chineseName ?? nativeName,
+      nativeName,
+      ...(chineseName && chineseName !== nativeName
+        ? { alternateName: nativeName }
+        : {}),
+      subjectType: subjectType as 1 | 2 | 4,
+      thumbnailUrl: requiredString(record.thumbnailUrl, '作品缩略图'),
+      sourceUrl: requiredString(record.sourceUrl, '作品来源页面'),
     }
   } catch {
     return null
@@ -118,27 +178,37 @@ async function searchBangumiDirect(
   signal?: AbortSignal,
 ): Promise<OnlineImageSearchResponse> {
   const endpoint =
-    kind === 'character' ? '/v0/search/characters' : '/v0/search/subjects'
+    kind === 'character'
+      ? '/v0/search/characters'
+      : kind === 'singer'
+        ? '/v0/search/persons'
+        : '/v0/search/subjects'
   const body =
     kind === 'character'
       ? { keyword: query, filter: { nsfw: false } }
-      : {
-          keyword: query,
-          sort: 'match',
-          filter: { type: [2], nsfw: false },
-        }
+      : kind === 'singer'
+        ? { keyword: query, filter: { career: ['artist'] } }
+        : {
+            keyword: query,
+            sort: 'match',
+            filter: { type: [kind === 'game' ? 4 : 2], nsfw: false },
+          }
   const url = new URL(BANGUMI_API_URL + endpoint)
   url.searchParams.set('limit', String(SEARCH_LIMIT))
   url.searchParams.set('offset', '0')
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await fetchSearchResponse(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
     },
-    body: JSON.stringify(body),
-    signal,
-  })
+    '无法连接 Bangumi，请检查网络后重试',
+  )
   if (!response.ok) {
     throw new OnlineImageSearchError(
       response.status === 429
@@ -164,10 +234,14 @@ async function searchBangumiGateway(
   const url = new URL(BANGUMI_GATEWAY_URL + '/v1/search')
   url.searchParams.set('query', query)
   url.searchParams.set('kind', kind)
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json' },
-    signal,
-  })
+  const response = await fetchSearchResponse(
+    url,
+    {
+      headers: { Accept: 'application/json' },
+      signal,
+    },
+    '无法连接 Bangumi 搜索服务，请检查网络后重试',
+  )
   if (!response.ok) {
     throw new OnlineImageSearchError(
       response.status === 429
@@ -234,6 +308,9 @@ async function searchAniList(
   kind: OnlineImageKind,
   signal?: AbortSignal,
 ): Promise<OnlineImageSearchResponse> {
+  if (kind === 'game' || kind === 'singer') {
+    throw new OnlineImageSearchError('AniList 暂不支持游戏或歌手搜索')
+  }
   const graphql =
     kind === 'character'
       ? `query ($search: String, $perPage: Int) {
@@ -258,18 +335,22 @@ async function searchAniList(
             }
           }
         }`
-  const response = await fetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await fetchSearchResponse(
+    'https://graphql.anilist.co',
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: graphql,
+        variables: { search: query, perPage: SEARCH_LIMIT },
+      }),
+      signal,
     },
-    body: JSON.stringify({
-      query: graphql,
-      variables: { search: query, perPage: SEARCH_LIMIT },
-    }),
-    signal,
-  })
+    '无法连接 AniList，请检查网络后重试',
+  )
   const retryAfterSeconds = headerNumber(response.headers, 'Retry-After')
   if (response.status === 429) {
     throw new OnlineImageSearchError(
@@ -313,9 +394,7 @@ async function searchAniList(
     errors?: Array<{ message?: string }>
   }
   if (payload.errors?.length) {
-    throw new OnlineImageSearchError(
-      payload.errors[0]?.message || 'AniList 返回了搜索错误',
-    )
+    throw new OnlineImageSearchError('AniList 返回了搜索错误，请稍后重试')
   }
   const results: OnlineImageSearchResult[] = []
   if (kind === 'character') {
@@ -437,6 +516,76 @@ export async function searchOnlineImages(
   )
 }
 
+export async function searchBangumiWorks(
+  query: string,
+  signal?: AbortSignal,
+): Promise<OnlineWorkSearchResult[]> {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) throw new OnlineImageSearchError('请输入作品名称')
+  const cacheKey = 'works:' + normalizedQuery.toLocaleLowerCase()
+  const cached = workResultCache.get(cacheKey)
+  if (cached) return cached
+  const url = new URL(BANGUMI_GATEWAY_URL + '/v1/search')
+  url.searchParams.set('query', normalizedQuery)
+  url.searchParams.set('kind', 'work')
+  const response = await fetchSearchResponse(
+    url,
+    { headers: { Accept: 'application/json' }, signal },
+    '无法连接 Bangumi 作品搜索，请检查网络后重试',
+  )
+  if (!response.ok) {
+    throw new OnlineImageSearchError(
+      response.status === 429
+        ? '作品搜索请求过于频繁，请稍后再试'
+        : 'Bangumi 作品搜索暂时不可用',
+    )
+  }
+  const payload = (await response.json()) as { results?: unknown[] }
+  const results = (payload.results ?? [])
+    .map(parseBangumiWorkResult)
+    .filter((item): item is OnlineWorkSearchResult => item !== null)
+  workResultCache.set(cacheKey, results)
+  while (workResultCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = workResultCache.keys().next().value
+    if (!oldestKey) break
+    workResultCache.delete(oldestKey)
+  }
+  return results
+}
+
+export async function searchBangumiSubjectCharacters(
+  work: OnlineWorkSearchResult,
+  signal?: AbortSignal,
+): Promise<OnlineImageSearchResult[]> {
+  const cacheKey = 'work-characters:' + work.externalId
+  const cached = resultCache.get(cacheKey)
+  if (cached) return cached.response.results
+  const url = new URL(BANGUMI_GATEWAY_URL + '/v1/subject-characters')
+  url.searchParams.set('subjectId', work.externalId)
+  const response = await fetchSearchResponse(
+    url,
+    { headers: { Accept: 'application/json' }, signal },
+    '无法读取这个作品的角色，请检查网络后重试',
+  )
+  if (!response.ok) {
+    throw new OnlineImageSearchError(
+      response.status === 429
+        ? '作品角色请求过于频繁，请稍后再试'
+        : '暂时无法读取这个作品的角色',
+    )
+  }
+  const payload = (await response.json()) as { results?: unknown[] }
+  const results = (payload.results ?? [])
+    .map((item) => parseBangumiResult(item, 'character'))
+    .filter((item): item is OnlineImageSearchResult => item !== null)
+    .map((item) => ({ ...item, subtitle: work.name }))
+  resultCache.set(cacheKey, {
+    response: { provider: 'bangumi', results },
+  })
+  return results
+}
+
 export function clearOnlineImageSearchCache(): void {
   resultCache.clear()
+  workResultCache.clear()
 }

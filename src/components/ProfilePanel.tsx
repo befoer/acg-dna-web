@@ -17,6 +17,7 @@ import {
 } from '../domain/profileTemplates'
 import { useEditor } from '../editor/editorContext'
 import { LocalImageEditor } from './LocalImageEditor'
+import eyeIconUrl from '../assets/eye.svg'
 
 function labelTypeForSlot(type: string): GraphProfileLabelType | null {
   const normalized = type.toLowerCase()
@@ -67,7 +68,7 @@ function VisibilityButton({ visible, label, onClick }: VisibilityButtonProps) {
       aria-pressed={visible}
       onClick={onClick}
     >
-      {visible ? '●' : '○'}
+      <img src={eyeIconUrl} alt={''} aria-hidden={true} />
     </button>
   )
 }
@@ -168,7 +169,7 @@ function CustomTextCard({
       {expanded ? (
         <div className={'profile-custom-text-settings'}>
           <p className={'profile-drag-hint'}>
-            在画布中按住这段文字即可拖动位置
+            拖动文字可调整位置，拖动四角可调整字号
           </p>
           <label className={'profile-select-row'}>
             <span>字体</span>
@@ -272,6 +273,7 @@ export function ProfilePanel() {
   const { state, dispatch, attachProfileAvatar, removeProfileAvatar } =
     useEditor()
   const profile = state.document.profile
+  const supportsProfileIdentity = state.document.canvas.templateId !== 'custom'
   const avatar = profile.avatarAssetId
     ? state.assets[profile.avatarAssetId]
     : undefined
@@ -402,17 +404,13 @@ export function ProfilePanel() {
       <div className={'profile-panel-content'} aria-label={'资料面板'}>
         <div className={'panel-header'}>
           <div>
-            <p className={'panel-eyebrow'}>PROFILE</p>
             <h2>资料</h2>
           </div>
         </div>
-        <p className={'panel-note'}>
-          完整复刻 APP 创作页资料构图；头像只从本地选择，不连接个人账号。
-        </p>
 
         <section className={'profile-section'} aria-label={'资料模板'}>
           <div className={'profile-section-title'}>
-            <span>⌄</span>
+            <span className={'profile-section-chevron'} aria-hidden={true} />
             <h3>模板</h3>
             <small>· {subTemplates.length}</small>
           </div>
@@ -449,105 +447,112 @@ export function ProfilePanel() {
           )}
         </section>
 
-        <section className={'profile-section'} aria-label={'头像与昵称'}>
-          <div className={'profile-section-title'}>
-            <span>⌄</span>
-            <h3>头像与昵称</h3>
-          </div>
-          <div className={'profile-avatar-editor'}>
-            <VisibilityButton
-              visible={profile.avatarVisible}
-              label={profile.avatarVisible ? '隐藏头像' : '显示头像'}
-              onClick={() => update({ avatarVisible: !profile.avatarVisible })}
-            />
-            <label
-              className={'profile-avatar-preview'}
-              title={'从本地选择头像'}
-            >
-              {avatar ? (
-                <img src={avatar.objectUrl} alt={''} />
-              ) : (
-                <span>＋</span>
-              )}
-              <input
-                type={'file'}
-                accept={'image/png,image/jpeg,image/webp,image/avif'}
-                aria-label={'选择资料头像'}
-                onChange={handleAvatar}
+        {supportsProfileIdentity ? (
+          <section className={'profile-section'} aria-label={'头像与昵称'}>
+            <div className={'profile-section-title'}>
+              <span className={'profile-section-chevron'} aria-hidden={true} />
+              <h3>头像与昵称</h3>
+            </div>
+            <div className={'profile-avatar-editor'}>
+              <VisibilityButton
+                visible={profile.avatarVisible}
+                label={profile.avatarVisible ? '隐藏头像' : '显示头像'}
+                onClick={() =>
+                  update({ avatarVisible: !profile.avatarVisible })
+                }
               />
-            </label>
-            <div className={'profile-gender-selector'} aria-label={'性别'}>
-              {[
-                ['male', '♂', '男'],
-                ['female', '♀', '女'],
-                ['none', '∅', '无'],
-              ].map(([gender, symbol, label]) => (
+              <label
+                className={'profile-avatar-preview'}
+                title={'从本地选择头像'}
+              >
+                {avatar ? (
+                  <img src={avatar.objectUrl} alt={''} />
+                ) : (
+                  <span>＋</span>
+                )}
+                <input
+                  type={'file'}
+                  accept={'image/png,image/jpeg,image/webp,image/avif'}
+                  aria-label={'选择资料头像'}
+                  onChange={handleAvatar}
+                />
+              </label>
+              <div className={'profile-gender-selector'} aria-label={'性别'}>
+                {[
+                  ['male', '男'],
+                  ['female', '女'],
+                  ['none', '无'],
+                ].map(([gender, label]) => (
+                  <button
+                    type={'button'}
+                    key={gender}
+                    className={profile.gender === gender ? 'is-selected' : ''}
+                    aria-label={'性别：' + label}
+                    aria-pressed={profile.gender === gender}
+                    onClick={() =>
+                      update({
+                        gender: gender as GraphProfileSettings['gender'],
+                      })
+                    }
+                  >
+                    <span
+                      className={'profile-gender-icon gender-' + gender}
+                      aria-hidden={true}
+                    />
+                  </button>
+                ))}
+              </div>
+              {avatar ? (
                 <button
                   type={'button'}
-                  key={gender}
-                  className={profile.gender === gender ? 'is-selected' : ''}
-                  aria-label={'性别：' + label}
-                  aria-pressed={profile.gender === gender}
-                  onClick={() =>
-                    update({
-                      gender: gender as GraphProfileSettings['gender'],
-                    })
-                  }
+                  className={'profile-remove-avatar'}
+                  onClick={() => setImageEditorAssetId(avatar.id)}
                 >
-                  {symbol}
+                  调整
                 </button>
-              ))}
+              ) : null}
+              {avatar ? (
+                <button
+                  type={'button'}
+                  className={'profile-remove-avatar'}
+                  onClick={removeProfileAvatar}
+                >
+                  移除
+                </button>
+              ) : null}
             </div>
-            {avatar ? (
-              <button
-                type={'button'}
-                className={'profile-remove-avatar'}
-                onClick={() => setImageEditorAssetId(avatar.id)}
-              >
-                调整
-              </button>
-            ) : null}
-            {avatar ? (
-              <button
-                type={'button'}
-                className={'profile-remove-avatar'}
-                onClick={removeProfileAvatar}
-              >
-                移除
-              </button>
-            ) : null}
-          </div>
-          <div className={'profile-nickname-row'}>
-            <VisibilityButton
-              visible={profile.nicknameVisible}
-              label={profile.nicknameVisible ? '隐藏昵称' : '显示昵称'}
-              onClick={() =>
-                update({ nicknameVisible: !profile.nicknameVisible })
-              }
-            />
-            <input
-              type={'text'}
-              aria-label={'资料昵称'}
-              maxLength={12}
-              placeholder={'输入昵称'}
-              value={profile.nickname}
-              onChange={(event) =>
-                update({ nickname: event.currentTarget.value }, 'nickname')
-              }
-              onBlur={(event) => {
-                if (!event.currentTarget.value.trim()) {
-                  update({ nickname: '我的昵称' })
+            <div className={'profile-nickname-row'}>
+              <VisibilityButton
+                visible={profile.nicknameVisible}
+                label={profile.nicknameVisible ? '隐藏昵称' : '显示昵称'}
+                onClick={() =>
+                  update({ nicknameVisible: !profile.nicknameVisible })
                 }
-              }}
-            />
-            <small>{profile.nickname.length}/12</small>
-          </div>
-        </section>
+              />
+              <input
+                type={'text'}
+                aria-label={'资料昵称'}
+                maxLength={12}
+                placeholder={'输入昵称'}
+                value={profile.nickname}
+                onChange={(event) =>
+                  update({ nickname: event.currentTarget.value }, 'nickname')
+                }
+                onBlur={(event) => {
+                  if (!event.currentTarget.value.trim()) {
+                    update({ nickname: '我的昵称' })
+                  }
+                }}
+              />
+              <small>{profile.nickname.length}/12</small>
+            </div>
+          </section>
+        ) : null}
 
         {currentTemplate ? (
           <section className={'profile-section'} aria-label={'资料标签'}>
             <div className={'profile-section-title'}>
-              <span>⌄</span>
+              <span className={'profile-section-chevron'} aria-hidden={true} />
               <h3>标签</h3>
               <small>
                 {visibleLabelCount}/{maximumLabels}
@@ -637,7 +642,7 @@ export function ProfilePanel() {
 
         <section className={'profile-section'} aria-label={'自定义文字'}>
           <div className={'profile-section-title'}>
-            <span>⌄</span>
+            <span className={'profile-section-chevron'} aria-hidden={true} />
             <h3>自定义文字</h3>
             <small>画布中可拖动</small>
           </div>

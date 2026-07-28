@@ -15,6 +15,7 @@ import {
 import {
   createProfileCustomTextRegions,
   hitTestProfileCustomText,
+  isProfileCustomTextResizeHandleHit,
   type ProfileCustomTextRegion,
 } from '../canvas/profileRenderer'
 import {
@@ -36,6 +37,7 @@ import {
   type DecorationPresetAssetMap,
 } from '../canvas/decorationRenderer'
 import { useEditor } from '../editor/editorContext'
+import { userErrorMessage } from '../errors/userErrorMessage'
 import {
   computeCanvasNodeActionGeometry,
   type CanvasNodeActionRequest,
@@ -63,12 +65,16 @@ const EMPTY_DECORATION_PRESET_ASSETS: DecorationPresetAssetMap = {}
 
 interface GraphCanvasProps {
   zoom: number
+  onZoom?: (delta: number) => void
+  onResetView?: () => void
   showContentBounds?: boolean
   onNodeAction?: (request: CanvasNodeActionRequest) => void
 }
 
 export function GraphCanvas({
   zoom,
+  onZoom,
+  onResetView,
   showContentBounds = false,
   onNodeAction,
 }: GraphCanvasProps) {
@@ -89,10 +95,16 @@ export function GraphCanvas({
   } | null>(null)
   const customTextDragRef = useRef<{
     id: string
+    mode: 'move' | 'resize'
     pointerX: number
     pointerY: number
     startX: number
     startY: number
+    startFontSize: number
+    centerX: number
+    centerY: number
+    rotation: number
+    startDistance: number
   } | null>(null)
   const decorationImageDragRef = useRef<{
     id: string
@@ -118,7 +130,16 @@ export function GraphCanvas({
     startY: number
     rotation: number
   } | null>(null)
+  const blankCanvasPanRef = useRef<{
+    pointerId: number
+    pointerX: number
+    pointerY: number
+    offsetX: number
+    offsetY: number
+  } | null>(null)
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 })
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
+  const [isBlankCanvasPanning, setIsBlankCanvasPanning] = useState(false)
   const [nodeActionMenuId, setNodeActionMenuId] = useState<string | null>(null)
   const [loadedTemplate, setLoadedTemplate] = useState<{
     templateId: string
@@ -273,10 +294,7 @@ export function GraphCanvas({
         if (!cancelled) {
           dispatch({
             type: 'status-changed',
-            message:
-              error instanceof Error
-                ? error.message
-                : '字体加载失败，已使用系统字体',
+            message: userErrorMessage(error, '字体加载失败，已使用系统字体'),
           })
         }
       },
@@ -507,6 +525,37 @@ export function GraphCanvas({
       event.preventDefault()
       return true
     }
+    const beginCustomTextDrag = (
+      customTextId: string,
+      mode: 'move' | 'resize',
+      region: ProfileCustomTextRegion,
+    ) => {
+      const customText = state.document.profile.customTexts.find(
+        (text) => text.id === customTextId,
+      )
+      if (!customText) return false
+      const padding = 6 * (state.document.canvas.height / 800)
+      dispatch({ type: 'custom-text-selected', textId: customTextId })
+      customTextDragRef.current = {
+        id: customTextId,
+        mode,
+        pointerX: point.x,
+        pointerY: point.y,
+        startX: customText.x,
+        startY: customText.y,
+        startFontSize: customText.fontSize,
+        centerX: region.left + region.width / 2,
+        centerY: region.top + region.height / 2,
+        rotation: region.rotation,
+        startDistance: Math.max(
+          1,
+          Math.hypot(region.width / 2 + padding, region.height / 2 + padding),
+        ),
+      }
+      canvas.setPointerCapture(event.pointerId)
+      event.preventDefault()
+      return true
+    }
     if (
       !showContentBounds &&
       selectedDecorationRegion &&
@@ -609,6 +658,26 @@ export function GraphCanvas({
       beginFrameDrag(selectedFrameRegion.id, 'resize')
       return
     }
+    const selectedCustomTextRegion = customTextRegionsRef.current.find(
+      (region) => region.id === state.editingCustomTextId,
+    )
+    if (
+      selectedCustomTextRegion &&
+      isProfileCustomTextResizeHandleHit(
+        selectedCustomTextRegion,
+        point.x,
+        point.y,
+        handleTolerance,
+        6 * (state.document.canvas.height / 800),
+      )
+    ) {
+      beginCustomTextDrag(
+        selectedCustomTextRegion.id,
+        'resize',
+        selectedCustomTextRegion,
+      )
+      return
+    }
     const content = state.document.canvas.contentBounds
     const centerX =
       ((content.left + content.right) / 2) * state.document.canvas.width
@@ -680,20 +749,10 @@ export function GraphCanvas({
           [customTextId],
         )
       ) {
-        const customText = state.document.profile.customTexts.find(
-          (text) => text.id === customTextId,
+        const region = customTextRegionsRef.current.find(
+          (candidate) => candidate.id === customTextId,
         )
-        if (!customText) return
-        dispatch({ type: 'custom-text-selected', textId: customTextId })
-        customTextDragRef.current = {
-          id: customTextId,
-          pointerX: point.x,
-          pointerY: point.y,
-          startX: customText.x,
-          startY: customText.y,
-        }
-        canvas.setPointerCapture(event.pointerId)
-        event.preventDefault()
+        if (region) beginCustomTextDrag(customTextId, 'move', region)
         return
       }
       if (layerId === DECORATION_DATA_LAYER_ID && node) {
@@ -899,6 +958,33 @@ export function GraphCanvas({
     const drag = customTextDragRef.current
     const point = canvasPoint(event)
     if (!drag || !point) return
+    if (drag.mode === 'resize') {
+      const angle = (-drag.rotation * Math.PI) / 180
+      const deltaX = point.x - drag.centerX
+      const deltaY = point.y - drag.centerY
+      const localX = deltaX * Math.cos(angle) - deltaY * Math.sin(angle)
+      const localY = deltaX * Math.sin(angle) + deltaY * Math.cos(angle)
+      const fontSize = Math.max(
+        10,
+        Math.min(
+          100,
+          drag.startFontSize *
+            (Math.hypot(localX, localY) / drag.startDistance),
+        ),
+      )
+      dispatch({
+        type: 'profile-settings-changed',
+        patch: {
+          customTexts: state.document.profile.customTexts.map((text) =>
+            text.id === drag.id ? { ...text, fontSize } : text,
+          ),
+        },
+        group: 'custom-text-font-size:' + drag.id,
+        at: new Date().toISOString(),
+      })
+      event.preventDefault()
+      return
+    }
     const nextX = Math.max(
       0,
       Math.min(
@@ -1041,12 +1127,90 @@ export function GraphCanvas({
     }
   }
 
+  const isDesktopCanvasWorkspace = () => window.innerWidth >= 900
+
+  const zoomCanvasWithWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (
+      !onZoom ||
+      event.ctrlKey ||
+      event.deltaY === 0 ||
+      !isDesktopCanvasWorkspace()
+    ) {
+      return
+    }
+    event.preventDefault()
+    onZoom(event.deltaY < 0 ? 0.1 : -0.1)
+  }
+
+  const startBlankCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (
+      !isDesktopCanvasWorkspace() ||
+      event.button !== 0 ||
+      event.target !== event.currentTarget
+    ) {
+      return
+    }
+    blankCanvasPanRef.current = {
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      offsetX: canvasPan.x,
+      offsetY: canvasPan.y,
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setIsBlankCanvasPanning(true)
+    event.preventDefault()
+  }
+
+  const moveBlankCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = blankCanvasPanRef.current
+    if (!pan || pan.pointerId !== event.pointerId) return
+    setCanvasPan({
+      x: pan.offsetX + event.clientX - pan.pointerX,
+      y: pan.offsetY + event.clientY - pan.pointerY,
+    })
+    event.preventDefault()
+  }
+
+  const finishBlankCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = blankCanvasPanRef.current
+    if (!pan || pan.pointerId !== event.pointerId) return
+    blankCanvasPanRef.current = null
+    setIsBlankCanvasPanning(false)
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const resetBlankCanvasView = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDesktopCanvasWorkspace() || event.target !== event.currentTarget)
+      return
+    blankCanvasPanRef.current = null
+    setIsBlankCanvasPanning(false)
+    setCanvasPan({ x: 0, y: 0 })
+    onResetView?.()
+  }
+
   return (
-    <div className="canvas-frame" ref={frameRef}>
-      <div className="canvas-surface" style={surfaceStyle}>
+    <div className="canvas-frame" ref={frameRef} onWheel={zoomCanvasWithWheel}>
+      <div
+        className={
+          'canvas-surface' + (isBlankCanvasPanning ? ' is-panning' : '')
+        }
+        style={surfaceStyle}
+        onPointerDown={startBlankCanvasPan}
+        onPointerMove={moveBlankCanvasPan}
+        onPointerUp={finishBlankCanvasPan}
+        onPointerCancel={finishBlankCanvasPan}
+        onDoubleClick={resetBlankCanvasView}
+      >
         <div
           className="canvas-node-layer"
-          style={{ width: displayWidth, height: displayHeight }}
+          style={{
+            width: displayWidth,
+            height: displayHeight,
+            transform: `translate(${canvasPan.x}px, ${canvasPan.y}px)`,
+          }}
         >
           <canvas
             ref={canvasRef}

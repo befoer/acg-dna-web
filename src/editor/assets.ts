@@ -41,7 +41,7 @@ function readOnlineImageSearchSeed(
   const record = value as Record<string, unknown>
   if (
     record.provider !== 'bangumi' ||
-    (record.kind !== 'character' && record.kind !== 'anime') ||
+    !['character', 'anime', 'game', 'singer'].includes(String(record.kind)) ||
     typeof record.externalId !== 'string' ||
     !record.externalId.trim() ||
     typeof record.name !== 'string' ||
@@ -64,7 +64,7 @@ function readOnlineImageSearchSeed(
   return {
     provider: 'bangumi',
     externalId: record.externalId,
-    kind: record.kind,
+    kind: record.kind as OnlineImageSearchResult['kind'],
     name: record.name,
     ...(optionalText('nativeName')
       ? { nativeName: optionalText('nativeName') }

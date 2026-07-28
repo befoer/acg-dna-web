@@ -3,6 +3,7 @@ import {
   DECORATION_PATTERN_LAYER_ID,
   decorationFrameLayerId,
   decorationImageLayerId,
+  decorationPatternLayerId,
   decorationPresetLayerId,
 } from '../domain/graph'
 import type {
@@ -215,6 +216,13 @@ export function drawDecorationLayer(
     if (document.decoration.pattern) {
       drawPattern(context, document.decoration.pattern, width, height)
     }
+    return
+  }
+  const pattern = document.decoration.patterns.find(
+    (candidate) => decorationPatternLayerId(candidate.id) === layerId,
+  )
+  if (pattern) {
+    drawPattern(context, pattern, width, height)
     return
   }
   const preset = DECORATION_PRESETS.find(

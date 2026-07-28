@@ -1,4 +1,5 @@
 import { parseGraphDocument, type GraphDocument } from '../domain/graph'
+import { userErrorMessage } from '../errors/userErrorMessage'
 import {
   storeLocalImageAsset,
   readImageAssetSource,
@@ -533,8 +534,5 @@ export function createBrowserProjectRepository(): ProjectRepository | null {
 }
 
 export function persistenceErrorMessage(error: unknown): string {
-  if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-    return '浏览器存储空间不足，请移除部分图片后重试'
-  }
-  return error instanceof Error ? error.message : '浏览器本地保存失败'
+  return userErrorMessage(error, '浏览器本地保存失败')
 }

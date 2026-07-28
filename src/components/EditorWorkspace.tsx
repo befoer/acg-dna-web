@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 
+import brandLogo from '../assets/brand-logo.svg'
+import appearanceIcon from '../assets/editor-appearance.svg'
+import dataIcon from '../assets/editor-data.svg'
+import profileIcon from '../assets/editor-profile.svg'
+import templateIcon from '../assets/editor-template.svg'
+import textLogo from '../assets/text-logo.svg'
 import { downloadGraphPng } from '../canvas/renderGraph'
 import { useEditor } from '../editor/editorContext'
+import { userErrorMessage } from '../errors/userErrorMessage'
 import { AppearancePanel } from './AppearancePanel'
 import { EditorPanel } from './EditorPanel'
 import type { CanvasNodeActionRequest } from './canvasNodeActions'
@@ -10,6 +18,16 @@ import { ProjectManager } from './ProjectManager'
 import { ProfilePanel } from './ProfilePanel'
 import { TemplatePanel } from './TemplatePanel'
 
+const PREVIEW_ZOOM_MIN = 0.5
+const PREVIEW_ZOOM_MAX = 2
+
+function changePreviewZoom(current: number, delta: number): number {
+  return Math.max(
+    PREVIEW_ZOOM_MIN,
+    Math.min(PREVIEW_ZOOM_MAX, Number((current + delta).toFixed(2))),
+  )
+}
+
 type EditorPanelId = 'data' | 'template' | 'profile' | 'appearance'
 
 const EDITOR_PANELS: ReadonlyArray<{
@@ -17,11 +35,22 @@ const EDITOR_PANELS: ReadonlyArray<{
   label: string
   icon: string
 }> = [
-  { id: 'template', label: '模板', icon: '▦' },
-  { id: 'data', label: '数据', icon: '⌘' },
-  { id: 'profile', label: '资料', icon: '◉' },
-  { id: 'appearance', label: '外观', icon: '◐' },
+  { id: 'template', label: '模板', icon: templateIcon },
+  { id: 'data', label: '数据', icon: dataIcon },
+  { id: 'profile', label: '资料', icon: profileIcon },
+  { id: 'appearance', label: '外观', icon: appearanceIcon },
 ]
+
+function EditorPanelIcon({ icon }: { icon: string }) {
+  return (
+    <span className="editor-panel-icon-frame" aria-hidden="true">
+      <span
+        className="editor-panel-icon"
+        style={{ '--editor-panel-icon': `url("${icon}")` } as CSSProperties}
+      />
+    </span>
+  )
+}
 
 function persistenceStatusText(
   persistence: ReturnType<typeof useEditor>['state']['persistence'],
@@ -138,6 +167,11 @@ export function EditorWorkspace() {
   const { state, dispatch, removeNode, retrySave } = useEditor()
   const [isExporting, setIsExporting] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
+  const [appearanceCanvasJump, setAppearanceCanvasJump] = useState(0)
+  const [canvasSizeLockNotice, setCanvasSizeLockNotice] = useState(false)
+  const canvasSizeLockNoticeTimeout = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null)
   const [activePanel, setActivePanel] = useState<EditorPanelId>('data')
   const [contentBoundsEditing, setContentBoundsEditing] = useState(false)
   const [canvasNodeAction, setCanvasNodeAction] =
@@ -147,9 +181,13 @@ export function EditorWorkspace() {
   const canRedo = state.history.future.length > 0
   const activePanelLabel =
     EDITOR_PANELS.find((panel) => panel.id === activePanel)?.label ?? '数据'
+  const isCanvasSizeLocked = state.document.canvas.templateId !== 'custom'
   const selectPanel = (panelId: EditorPanelId): void => {
     setActivePanel(panelId)
     if (panelId !== 'appearance') setContentBoundsEditing(false)
+    if (panelId !== 'data') {
+      dispatch({ type: 'node-selected', nodeId: null })
+    }
   }
 
   const panelContent =
@@ -161,6 +199,7 @@ export function EditorWorkspace() {
       <AppearancePanel
         contentBoundsEditing={contentBoundsEditing}
         onContentBoundsEditingChange={setContentBoundsEditing}
+        canvasJumpToken={appearanceCanvasJump}
       />
     ) : (
       <EditorPanel
@@ -188,6 +227,31 @@ export function EditorWorkspace() {
     return () => window.removeEventListener('keydown', handleHistoryShortcut)
   }, [canRedo, canUndo, dispatch])
 
+  useEffect(
+    () => () => {
+      if (canvasSizeLockNoticeTimeout.current) {
+        clearTimeout(canvasSizeLockNoticeTimeout.current)
+      }
+    },
+    [],
+  )
+
+  const openCanvasSizeSettings = () => {
+    if (!isCanvasSizeLocked) {
+      setActivePanel('appearance')
+      setAppearanceCanvasJump((current) => current + 1)
+      return
+    }
+    setCanvasSizeLockNotice(true)
+    if (canvasSizeLockNoticeTimeout.current) {
+      clearTimeout(canvasSizeLockNoticeTimeout.current)
+    }
+    canvasSizeLockNoticeTimeout.current = setTimeout(() => {
+      setCanvasSizeLockNotice(false)
+      canvasSizeLockNoticeTimeout.current = null
+    }, 2000)
+  }
+
   const exportPng = async () => {
     setIsExporting(true)
     dispatch({ type: 'status-changed', message: '正在生成高清 PNG…' })
@@ -197,7 +261,7 @@ export function EditorWorkspace() {
     } catch (error) {
       dispatch({
         type: 'status-changed',
-        message: error instanceof Error ? error.message : '导出失败',
+        message: userErrorMessage(error, 'PNG 导出失败'),
       })
     } finally {
       setIsExporting(false)
@@ -212,11 +276,10 @@ export function EditorWorkspace() {
           href="#main-editor"
           aria-label="ACG DNA Web 编辑器"
         >
-          <span className="brand-mark">AC</span>
-          <span className="brand-copy">
-            <strong>ACG DNA</strong>
-            <small>WEB EDITOR</small>
+          <span className="brand-mark" aria-hidden="true">
+            <img src={brandLogo} alt="" />
           </span>
+          <img className="brand-copy" src={textLogo} alt="次元属性" />
         </a>
 
         <ProjectManager />
@@ -270,7 +333,7 @@ export function EditorWorkspace() {
             onClick={() => void exportPng()}
           >
             <DownloadIcon />
-            <span>{isExporting ? '导出中…' : '导出 PNG'}</span>
+            <span>{isExporting ? '导出中…' : '导出图片'}</span>
           </button>
         </div>
       </header>
@@ -287,7 +350,7 @@ export function EditorWorkspace() {
                 onClick={() => selectPanel(panel.id)}
                 key={panel.id}
               >
-                <span aria-hidden={true}>{panel.icon}</span>
+                <EditorPanelIcon icon={panel.icon} />
                 <small>{panel.label}</small>
               </button>
             )
@@ -314,7 +377,8 @@ export function EditorWorkspace() {
                   onClick={() => selectPanel(panel.id)}
                   key={panel.id}
                 >
-                  {panel.label}
+                  <EditorPanelIcon icon={panel.icon} />
+                  <span>{panel.label}</span>
                 </button>
               )
             })}
@@ -322,43 +386,17 @@ export function EditorWorkspace() {
           {panelContent}
         </section>
 
-        <section className="canvas-stage" aria-labelledby="preview-title">
+        <section className="canvas-stage" aria-label="画布预览">
           <div className="canvas-stage-header">
-            <div>
-              <span className="live-badge">
-                <span /> LIVE
-              </span>
-              <h1 id="preview-title">画布预览</h1>
-            </div>
             <div className="canvas-stage-actions">
-              <label className="layout-control">
-                <span>布局</span>
-                <select
-                  aria-label="布局方式"
-                  value={state.document.canvas.layoutMode}
-                  onChange={(event) =>
-                    dispatch({
-                      type: 'layout-mode-changed',
-                      mode:
-                        event.currentTarget.value === 'gravity'
-                          ? 'gravity'
-                          : 'packing',
-                      at: new Date().toISOString(),
-                    })
-                  }
-                >
-                  <option value="packing">基础聚合</option>
-                  <option value="gravity">重力碰撞</option>
-                </select>
-              </label>
               <div className="zoom-controls" aria-label="画布缩放">
                 <button
                   type="button"
                   aria-label="缩小画布"
-                  disabled={previewZoom <= 0.5}
+                  disabled={previewZoom <= PREVIEW_ZOOM_MIN}
                   onClick={() =>
                     setPreviewZoom((current) =>
-                      Math.max(0.5, Number((current - 0.25).toFixed(2))),
+                      changePreviewZoom(current, -0.25),
                     )
                   }
                 >
@@ -376,19 +414,42 @@ export function EditorWorkspace() {
                 <button
                   type="button"
                   aria-label="放大画布"
-                  disabled={previewZoom >= 2}
+                  disabled={previewZoom >= PREVIEW_ZOOM_MAX}
                   onClick={() =>
                     setPreviewZoom((current) =>
-                      Math.min(2, Number((current + 0.25).toFixed(2))),
+                      changePreviewZoom(current, 0.25),
                     )
                   }
                 >
                   ＋
                 </button>
               </div>
-              <span className="canvas-size">
-                {state.document.canvas.width} × {state.document.canvas.height}
-              </span>
+              <div className="canvas-size-control">
+                <button
+                  type="button"
+                  className={
+                    'canvas-size' + (isCanvasSizeLocked ? ' is-locked' : '')
+                  }
+                  aria-label={
+                    isCanvasSizeLocked ? '画布比例已锁定' : '调整画布比例'
+                  }
+                  aria-describedby={
+                    canvasSizeLockNotice ? 'canvas-size-lock-notice' : undefined
+                  }
+                  onClick={openCanvasSizeSettings}
+                >
+                  {state.document.canvas.width} × {state.document.canvas.height}
+                </button>
+                {canvasSizeLockNotice ? (
+                  <span
+                    id="canvas-size-lock-notice"
+                    className="canvas-size-lock-notice"
+                    role="status"
+                  >
+                    当前模板已锁定画布比例
+                  </span>
+                ) : null}
+              </div>
             </div>
             <PersistenceStatus
               className="mobile-status"
@@ -399,6 +460,10 @@ export function EditorWorkspace() {
           </div>
           <GraphCanvas
             zoom={previewZoom}
+            onZoom={(delta) =>
+              setPreviewZoom((current) => changePreviewZoom(current, delta))
+            }
+            onResetView={() => setPreviewZoom(1)}
             showContentBounds={
               activePanel === 'appearance' && contentBoundsEditing
             }
@@ -411,11 +476,6 @@ export function EditorWorkspace() {
               setCanvasNodeAction(request)
             }}
           />
-          <p className="canvas-hint">
-            {contentBoundsEditing
-              ? '拖动虚线框内部移动范围 · 拖四角或边框调整大小'
-              : '点击气泡打开快捷操作 · 点击装饰图片后可拖动和缩放'}
-          </p>
         </section>
       </main>
     </div>

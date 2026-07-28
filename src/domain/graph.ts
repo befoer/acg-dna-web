@@ -47,6 +47,11 @@ export interface GraphDecorationPattern {
   weight: number
 }
 
+export interface GraphDecorationPatternElement extends GraphDecorationPattern {
+  id: string
+  name: string
+}
+
 export interface GraphDecorationFrame {
   visible: boolean
   width: number
@@ -80,6 +85,7 @@ export interface GraphDecorationImage {
 export interface GraphDecorationSettings {
   templateBackgroundVisible: boolean
   presetIds: GraphDecorationPresetId[]
+  patterns: GraphDecorationPatternElement[]
   pattern: GraphDecorationPattern | null
   frames: GraphDecorationFrameElement[]
   images: GraphDecorationImage[]
@@ -90,6 +96,7 @@ export interface GraphDecorationSettings {
 export const DEFAULT_DECORATION_SETTINGS: GraphDecorationSettings = {
   templateBackgroundVisible: true,
   presetIds: [],
+  patterns: [],
   pattern: null,
   frames: [],
   images: [],
@@ -101,6 +108,7 @@ function createDefaultDecorationSettings(): GraphDecorationSettings {
   return {
     ...DEFAULT_DECORATION_SETTINGS,
     presetIds: [],
+    patterns: [],
     frames: [],
     images: [],
     layerOrder: [DECORATION_DATA_LAYER_ID],
@@ -110,6 +118,7 @@ function createDefaultDecorationSettings(): GraphDecorationSettings {
 
 export const DECORATION_DATA_LAYER_ID = 'data'
 export const DECORATION_PATTERN_LAYER_ID = 'pattern'
+export const DECORATION_PATTERN_LAYER_PREFIX = 'pattern:'
 export const DECORATION_CUSTOM_TEXT_LAYER_PREFIX = 'text:'
 
 export function decorationPresetLayerId(id: GraphDecorationPresetId): string {
@@ -118,6 +127,16 @@ export function decorationPresetLayerId(id: GraphDecorationPresetId): string {
 
 export function decorationFrameLayerId(id: string): string {
   return 'frame:' + id
+}
+
+export function decorationPatternLayerId(id: string): string {
+  return DECORATION_PATTERN_LAYER_PREFIX + id
+}
+
+export function patternIdFromDecorationLayer(layerId: string): string | null {
+  return layerId.startsWith(DECORATION_PATTERN_LAYER_PREFIX)
+    ? layerId.slice(DECORATION_PATTERN_LAYER_PREFIX.length)
+    : null
 }
 
 export function decorationImageLayerId(id: string): string {
@@ -139,7 +158,7 @@ export function customTextIdFromDecorationLayer(
 export function resolveDecorationLayerOrder(
   decoration: Pick<
     GraphDecorationSettings,
-    'presetIds' | 'pattern' | 'frames' | 'images' | 'layerOrder'
+    'presetIds' | 'patterns' | 'pattern' | 'frames' | 'images' | 'layerOrder'
   >,
   customTextIds: readonly string[] = [],
 ): string[] {
@@ -149,6 +168,9 @@ export function resolveDecorationLayerOrder(
     activeIds.add(decorationPresetLayerId(id)),
   )
   if (decoration.pattern) activeIds.add(DECORATION_PATTERN_LAYER_ID)
+  decoration.patterns.forEach((pattern) =>
+    activeIds.add(decorationPatternLayerId(pattern.id)),
+  )
   decoration.frames.forEach((frame) =>
     activeIds.add(decorationFrameLayerId(frame.id)),
   )
@@ -182,6 +204,9 @@ export function resolveDecorationLayerOrder(
     ...decoration.presetIds
       .filter((id) => id === 'nya-shop' || id === 'pp')
       .map(decorationPresetLayerId),
+    ...[...decoration.patterns]
+      .reverse()
+      .map((pattern) => decorationPatternLayerId(pattern.id)),
     ...(decoration.pattern ? [DECORATION_PATTERN_LAYER_ID] : []),
   ]
   defaults.forEach((id) => {
@@ -263,6 +288,7 @@ export interface GraphCategoryAppearance {
   fontWeight?: number
   categoryStrokeWidth?: number
   labelStrokeWidth?: number
+  colorOverride?: string | null
   textColorOverride?: string | null
   imageMask?: GraphImageMask
   imageMaskOpacity?: number
@@ -405,6 +431,10 @@ export function resolveCategoryAppearance(
     fontWeight: appearance?.fontWeight ?? globalSettings.fontWeight,
     localFontId: fontFamily === 'local' ? globalSettings.localFontId : null,
     localFontName: fontFamily === 'local' ? globalSettings.localFontName : null,
+    colorOverride:
+      appearance?.colorOverride === undefined
+        ? globalSettings.colorOverride
+        : appearance.colorOverride,
     textColorOverride:
       appearance?.textColorOverride === undefined
         ? globalSettings.textColorOverride
@@ -1362,18 +1392,23 @@ function readCategoryAppearance(
     appearance.fontFamily = value
   }
 
-  if (source.textColorOverride !== undefined) {
-    const value = source.textColorOverride
+  const readOptionalColorOverride = (
+    key: 'colorOverride' | 'textColorOverride',
+  ) => {
+    const value = source[key]
+    if (value === undefined) return
     if (
       value !== null &&
       (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value))
     ) {
       throw new GraphValidationError(
-        appearancePath + '.textColorOverride 必须是 null 或 #RRGGBB 颜色',
+        appearancePath + '.' + key + ' 必须是 null 或 #RRGGBB 颜色',
       )
     }
-    appearance.textColorOverride = value
+    appearance[key] = value
   }
+  readOptionalColorOverride('colorOverride')
+  readOptionalColorOverride('textColorOverride')
 
   if (source.imageMask !== undefined) {
     const value = source.imageMask
@@ -1483,6 +1518,46 @@ function readDecorationSettings(
       weight: readNumber(source, 'weight', patternPath, 0.1, 1),
     }
   }
+  const patternValues =
+    decoration.patterns === undefined
+      ? []
+      : readArray(decoration, 'patterns', path)
+  if (patternValues.length > 20) {
+    throw new GraphValidationError(path + '.patterns 最多包含 20 个图案')
+  }
+  const seenPatternIds = new Set<string>()
+  const patterns = patternValues.map(
+    (value, index): GraphDecorationPatternElement => {
+      const patternPath = path + '.patterns[' + index + ']'
+      const source = readRecord(value, patternPath)
+      const id = readString(source, 'id', patternPath)
+      if (seenPatternIds.has(id)) {
+        throw new GraphValidationError(patternPath + '.id 与其他图案重复')
+      }
+      seenPatternIds.add(id)
+      if (typeof source.visible !== 'boolean') {
+        throw new GraphValidationError(patternPath + '.visible 必须是布尔值')
+      }
+      if (
+        source.type !== 'checker' &&
+        source.type !== 'dots' &&
+        source.type !== 'grid'
+      ) {
+        throw new GraphValidationError(patternPath + '.type 无效')
+      }
+      return {
+        id,
+        name: readString(source, 'name', patternPath),
+        visible: source.visible,
+        type: source.type,
+        foregroundColor: readColor(source, 'foregroundColor', patternPath),
+        backgroundColor: readColor(source, 'backgroundColor', patternPath),
+        size: readNumber(source, 'size', patternPath, 10, 100),
+        rotation: readNumber(source, 'rotation', patternPath, 0, 180),
+        weight: readNumber(source, 'weight', patternPath, 0.1, 1),
+      }
+    },
+  )
   const readFrame = (
     source: UnknownRecord,
     framePath: string,
@@ -1583,6 +1658,7 @@ function readDecorationSettings(
         ? templateVisible
         : DEFAULT_DECORATION_SETTINGS.templateBackgroundVisible,
     presetIds,
+    patterns,
     pattern,
     frames,
     images,

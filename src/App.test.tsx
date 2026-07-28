@@ -38,16 +38,33 @@ describe('local editor flow', () => {
     await user.type(nameInput, '赛博叙事')
     expect(screen.getByText('赛博叙事')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '＋ 添加子属性' }))
+    await user.click(
+      screen.getByRole('button', { name: '为 赛博叙事 选择图片' }),
+    )
+    expect(screen.getByRole('dialog', { name: '搜索图片' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '自定义' }))
     expect(
-      screen.getByRole('dialog', { name: '添加子属性' }),
+      screen.getByRole('dialog', { name: '自定义内容' }),
     ).toBeInTheDocument()
-    const childName = screen.getByRole('textbox', {
-      name: /子属性名称/,
-    })
-    await user.type(childName, '镜头语言')
-    await user.click(screen.getByRole('button', { name: '添加' }))
-    expect(screen.getByLabelText('名称')).toHaveValue('镜头语言')
+    await user.type(screen.getByLabelText('自定义名称'), '镜头语言')
+    await user.click(screen.getByRole('button', { name: '确认' }))
+    expect(screen.getByText('镜头语言')).toBeInTheDocument()
+  })
+
+  it('selects a category from its spacer and clears selection from panel whitespace', () => {
+    renderLegacyEditorFixture()
+
+    expect(screen.queryByText(/SELECTED/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '显示中' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '选择 角色取向' }))
+    expect(screen.getByLabelText('名称')).toHaveValue('角色取向')
+
+    fireEvent.click(screen.getByLabelText('数据编辑面板'))
+    expect(screen.queryByText('选择一个气泡')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('节点编辑')).not.toBeInTheDocument()
   })
 
   it('opens contextual actions around the selected canvas node', async () => {
@@ -87,7 +104,7 @@ describe('local editor flow', () => {
       within(actions).getByRole('button', { name: '调整标签图片' }),
     )
     expect(
-      await screen.findByRole('dialog', { name: '在线选择图片' }),
+      await screen.findByRole('dialog', { name: '搜索图片' }),
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '关闭' }))
 
@@ -127,15 +144,52 @@ describe('local editor flow', () => {
     const user = userEvent.setup()
     renderLegacyEditorFixture()
 
-    const layout = screen.getByRole('combobox', { name: '布局方式' })
-    expect(layout).toHaveValue('gravity')
-    await user.selectOptions(layout, 'packing')
+    await user.click(screen.getByRole('button', { name: '外观' }))
+    await user.click(screen.getByRole('tab', { name: '画布' }))
+    const gravityLayout = screen.getByRole('button', { name: '重力碰撞' })
+    expect(gravityLayout).toHaveAttribute('aria-pressed', 'true')
+    await user.click(gravityLayout)
+    expect(gravityLayout).toHaveAttribute('aria-pressed', 'false')
+    await user.click(screen.getByRole('button', { name: '数据' }))
     expect(screen.getByLabelText('数据编辑面板')).toHaveTextContent(
       '已启用基础聚合布局',
     )
 
     const fit = screen.getByRole('button', { name: '适应画布' })
     expect(fit).toHaveTextContent('100%')
+    const canvas = screen.getByRole('img', { name: /属性图预览/ })
+    const canvasFrame = canvas.closest('.canvas-frame')
+    const canvasSurface = canvas.closest('.canvas-surface')
+    const canvasNodeLayer = canvas.closest('.canvas-node-layer')
+    expect(canvasFrame).not.toBeNull()
+    expect(canvasSurface).not.toBeNull()
+    expect(canvasNodeLayer).not.toBeNull()
+
+    fireEvent.wheel(canvasFrame!, {
+      deltaY: -100,
+    })
+    expect(fit).toHaveTextContent('110%')
+    fireEvent.wheel(canvasFrame!, {
+      deltaY: 100,
+    })
+    expect(fit).toHaveTextContent('100%')
+
+    fireEvent.pointerDown(canvasSurface!, {
+      button: 0,
+      pointerId: 1,
+      clientX: 140,
+      clientY: 160,
+    })
+    fireEvent.pointerMove(canvasSurface!, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 120,
+    })
+    expect(canvasNodeLayer).toHaveStyle({
+      transform: 'translate(-40px, -40px)',
+    })
+    fireEvent.pointerUp(canvasSurface!, { pointerId: 1 })
+
     await user.click(screen.getByRole('button', { name: '放大画布' }))
     expect(fit).toHaveTextContent('125%')
   })
@@ -157,19 +211,20 @@ describe('local editor flow', () => {
 
     await user.click(within(toolRail).getByRole('button', { name: /外观/ }))
     await user.click(screen.getByRole('tab', { name: '画布' }))
-    const editBounds = screen.getByRole('button', { name: '显示调整框' })
+    const editBounds = screen.getByRole('button', { name: '调整范围' })
     expect(editBounds).toHaveAttribute('aria-pressed', 'false')
     await user.click(editBounds)
-    expect(screen.getByRole('button', { name: '隐藏调整框' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '调整范围' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     await user.click(screen.getByRole('tab', { name: '装饰' }))
     await user.click(screen.getByRole('tab', { name: '画布' }))
-    expect(screen.getByRole('button', { name: '显示调整框' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '调整范围' })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
+    await user.click(screen.getByRole('button', { name: '调整范围' }))
     const width = screen.getByRole('slider', { name: '宽度' })
     expect(width).toHaveValue('87')
     fireEvent.change(width, { target: { value: '60' } })
@@ -190,16 +245,26 @@ describe('local editor flow', () => {
       'aria-selected',
       'true',
     )
-    await user.click(screen.getByRole('tab', { name: /图层/ }))
     expect(screen.getByText('列表从上到下对应画布从前到后')).toBeVisible()
     await user.click(screen.getByRole('tab', { name: '画布' }))
     expect(screen.getByText('画布比例')).toBeVisible()
     expect(within(toolRail).getAllByRole('button')).toHaveLength(4)
+    expect(toolRail.querySelectorAll('.editor-panel-icon')).toHaveLength(4)
     expect(
       within(screen.getByRole('tablist', { name: '编辑面板' })).getAllByRole(
         'tab',
       ),
     ).toHaveLength(4)
+    expect(
+      screen
+        .getByRole('tablist', { name: '编辑面板' })
+        .querySelectorAll('.editor-panel-icon'),
+    ).toHaveLength(4)
+    expect(
+      screen
+        .getByLabelText('ACG DNA Web 编辑器')
+        .querySelector('.brand-mark img'),
+    ).toBeInTheDocument()
   })
 
   it('shows the effective custom text visibility in the shared layer list', async () => {
@@ -213,8 +278,7 @@ describe('local editor flow', () => {
     await user.click(screen.getByRole('button', { name: '＋ 添加文字' }))
     await user.click(screen.getByRole('button', { name: '隐藏自定义文字' }))
     await user.click(within(toolRail).getByRole('button', { name: /外观/ }))
-    await user.click(screen.getByRole('tab', { name: /图层/ }))
-
+    await user.click(screen.getByRole('button', { name: '展开图层' }))
     const textLayer = screen
       .getByText('自定义文本')
       .closest<HTMLElement>('[data-layer-id]')
@@ -288,12 +352,19 @@ describe('local editor flow', () => {
     renderLegacyEditorFixture()
 
     await user.click(screen.getByRole('button', { name: '导入文字' }))
-    expect(
-      screen.getByRole('dialog', { name: '导入文字结构' }),
-    ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '填入示例' }))
+    expect(screen.getByRole('dialog', { name: '导入属性' })).toBeInTheDocument()
+    await user.type(
+      screen.getByLabelText('待导入三级结构'),
+      [
+        '分类：动画偏好',
+        '  属性：叙事氛围',
+        '    子属性：世界观',
+        '    子属性：情绪余韵',
+        '  属性：作画表现',
+      ].join('\n'),
+    )
     expect(screen.getByText(/识别到/)).toHaveTextContent(
-      '1 个分类、2 个属性、2 个子属性',
+      '1 个一级属性、2 个二级属性、2 个三级属性',
     )
     await user.click(screen.getByRole('button', { name: '确认追加' }))
     expect(screen.getByLabelText('数据编辑面板')).toHaveTextContent(
@@ -305,18 +376,51 @@ describe('local editor flow', () => {
     expect(
       (screen.getByLabelText('完整结构文本') as HTMLTextAreaElement).value,
     ).toContain('动画偏好')
-    await user.click(screen.getByRole('tab', { name: '仅标签' }))
     expect(
       (screen.getByLabelText('仅标签文本') as HTMLTextAreaElement).value,
     ).toContain('叙事氛围')
+    expect(
+      screen.getByRole('button', { name: '复制完整结构' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '复制仅标签' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '下载 TXT' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('edits and resets global label settings from the data panel', async () => {
+  it('adds flat imported labels to the selected tree target', async () => {
     const user = userEvent.setup()
     renderLegacyEditorFixture()
 
-    await user.click(screen.getByRole('button', { name: '全局设置' }))
-    expect(screen.getByLabelText('全局标签设置')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '导入文字' }))
+    const input = screen.getByLabelText('待导入三级结构')
+    await user.type(input, '构图、镜头、节奏')
+    const target = screen.getByLabelText('选择添加位置')
+    await user.selectOptions(target, 'attribute-story')
+    await user.click(screen.getByRole('button', { name: '确认添加' }))
+
+    expect(screen.getByText('构图')).toBeInTheDocument()
+    expect(screen.getByText('镜头')).toBeInTheDocument()
+    expect(screen.getByText('节奏')).toBeInTheDocument()
+  })
+
+  it('edits and resets global label settings from the appearance canvas', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    expect(
+      screen.queryByRole('heading', { name: '三级结构' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '全局设置' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '外观' }))
+    await user.click(screen.getByRole('tab', { name: '画布' }))
+    const globalSettings = screen.getByLabelText('全局标签设置')
+    expect(globalSettings).toBeInTheDocument()
 
     const categoryDisplay = screen.getByRole('button', {
       name: '分类显示',
@@ -360,15 +464,47 @@ describe('local editor flow', () => {
     await user.click(unifiedColor)
     expect(color).toBeEnabled()
 
-    await user.click(screen.getByRole('button', { name: '重置' }))
+    await user.click(
+      within(globalSettings).getByRole('button', { name: '重置' }),
+    )
     expect(categoryText).toHaveAttribute('aria-pressed', 'true')
     expect(categoryStroke).toHaveValue('2')
-    expect(color).toBeDisabled()
+    expect(color).toBeEnabled()
+    expect(color).toHaveValue('#000000')
     expect(fontFamily).toHaveValue('sans')
     expect(screen.getByRole('slider', { name: '字重' })).toHaveValue('600')
 
-    await user.click(screen.getByRole('button', { name: '返回数据编辑' }))
-    expect(screen.getByLabelText('名称')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '数据' }))
+    expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+  })
+
+  it('renames a tree node when its name is double clicked', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    const treeName = document.querySelector<HTMLButtonElement>(
+      '.graph-tree .tree-node-button',
+    )
+    if (!treeName) throw new Error('未找到三级结构节点')
+    const name = treeName.textContent ?? ''
+    await user.dblClick(treeName)
+
+    const input = screen.getByRole('textbox', { name: '重命名 ' + name })
+    await user.clear(input)
+    await user.type(input, '动画偏好')
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByRole('button', { name: '动画偏好' })).toBeInTheDocument()
+  })
+
+  it('opens image search from the selected node image control', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    await user.click(screen.getByRole('button', { name: '搜索图片' }))
+    expect(
+      await screen.findByRole('dialog', { name: '搜索图片' }),
+    ).toBeInTheDocument()
   })
 
   it('fits the full logical canvas and enlarges only its CSS preview size', async () => {

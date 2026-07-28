@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -16,13 +17,18 @@ import {
   customTextIdFromDecorationLayer,
   decorationFrameLayerId,
   decorationImageLayerId,
+  decorationPatternLayerId,
   decorationPresetLayerId,
+  patternIdFromDecorationLayer,
   resolveDecorationLayerOrder,
   type GraphDecorationFrame,
+  type GraphDecorationPattern,
   type GraphDecorationSettings,
 } from '../domain/graph'
 import { useEditor } from '../editor/editorContext'
 import { ContentBoundsPanel } from './ContentBoundsPanel'
+import { GlobalLabelSettingsPanel } from './GlobalLabelSettingsPanel'
+import eyeIconUrl from '../assets/eye.svg'
 
 const CANVAS_PRESETS = [
   { id: 'classic', name: '经典竖版', width: 1380, height: 2000 },
@@ -30,15 +36,6 @@ const CANVAS_PRESETS = [
   { id: 'story', name: '长图 9:16', width: 1125, height: 2000 },
   { id: 'square', name: '正方形', width: 1600, height: 1600 },
   { id: 'landscape', name: '横版 4:3', width: 2000, height: 1500 },
-] as const
-
-const BACKGROUND_COLORS = [
-  '#F6F2EC',
-  '#FFFFFF',
-  '#F4E9EF',
-  '#E8F2F0',
-  '#E9EDF6',
-  '#25252B',
 ] as const
 
 function timestamp(): string {
@@ -53,29 +50,36 @@ function clampDimension(value: number): number {
 interface AppearancePanelProps {
   contentBoundsEditing?: boolean
   onContentBoundsEditingChange?: (editing: boolean) => void
+  canvasJumpToken?: number
 }
 
 export function AppearancePanel({
   contentBoundsEditing = false,
   onContentBoundsEditingChange,
+  canvasJumpToken = 0,
 }: AppearancePanelProps = {}) {
   const { state, dispatch, attachDecorationImage, removeDecorationImage } =
     useEditor()
   const canvas = state.document.canvas
-  const labels = canvas.labelSettings
   const sizeLocked = canvas.templateId !== 'custom'
   const decoration = state.document.decoration
-  const [decorationFilter, setDecorationFilter] = useState<
-    'all' | 'element' | 'background'
-  >('all')
-  const [appearanceTab, setAppearanceTab] = useState<
-    'decoration' | 'layers' | 'canvas'
-  >('decoration')
+  // The filters remain part of the rendering data flow for future material groups.
+  const [decorationFilter] = useState<'all' | 'element' | 'background'>('all')
+  const [appearanceTab, setAppearanceTab] = useState<'decoration' | 'canvas'>(
+    'decoration',
+  )
+  const [selectedPatternId, setSelectedPatternId] = useState<string | null>(
+    null,
+  )
+  const [layersExpanded, setLayersExpanded] = useState(false)
   const selectedDecorationImage = decoration.images.find(
     (image) => image.id === state.editingDecorationImageId,
   )
   const selectedFrame = decoration.frames.find(
     (frame) => frame.id === state.editingDecorationFrameId,
+  )
+  const selectedPattern = decoration.patterns.find(
+    (pattern) => pattern.id === selectedPatternId,
   )
   const resolvedLayerOrder = resolveDecorationLayerOrder(
     decoration,
@@ -83,6 +87,12 @@ export function AppearancePanel({
   )
   const layerDragRef = useRef<string | null>(null)
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (canvasJumpToken <= 0) return
+    const timer = window.setTimeout(() => setAppearanceTab('canvas'), 0)
+    return () => window.clearTimeout(timer)
+  }, [canvasJumpToken])
 
   const resizeCanvas = (width: number, height: number) => {
     dispatch({
@@ -97,18 +107,6 @@ export function AppearancePanel({
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     resizeCanvas(Number(formData.get('width')), Number(formData.get('height')))
-  }
-
-  const updateStroke = (
-    patch: { categoryStrokeWidth?: number; labelStrokeWidth?: number },
-    group: string,
-  ) => {
-    dispatch({
-      type: 'label-settings-changed',
-      patch,
-      group,
-      at: timestamp(),
-    })
   }
 
   const handleDecorationImageFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -132,6 +130,23 @@ export function AppearancePanel({
     })
   }
 
+  const updateSelectedPattern = (
+    patch: Partial<GraphDecorationPattern>,
+    group?: string,
+  ) => {
+    if (!selectedPattern) return
+    updateDecoration(
+      {
+        patterns: decoration.patterns.map((pattern) =>
+          pattern.id === selectedPattern.id
+            ? { ...pattern, ...patch }
+            : pattern,
+        ),
+      },
+      group,
+    )
+  }
+
   const togglePreset = (
     presetId: (typeof DECORATION_PRESETS)[number]['id'],
   ) => {
@@ -151,6 +166,11 @@ export function AppearancePanel({
   const layerName = (layerId: string): string => {
     if (layerId === DECORATION_DATA_LAYER_ID) return '属性图'
     if (layerId === DECORATION_PATTERN_LAYER_ID) return '自定义图案'
+    const patternId = patternIdFromDecorationLayer(layerId)
+    const pattern = decoration.patterns.find(
+      (candidate) => candidate.id === patternId,
+    )
+    if (pattern) return pattern.name
     const preset = DECORATION_PRESETS.find(
       (candidate) => decorationPresetLayerId(candidate.id) === layerId,
     )
@@ -188,6 +208,14 @@ export function AppearancePanel({
     const textId = customTextIdFromDecorationLayer(layerId)
     if (textId) {
       dispatch({ type: 'custom-text-selected', textId })
+      return
+    }
+    const patternId = patternIdFromDecorationLayer(layerId)
+    if (
+      patternId &&
+      decoration.patterns.some((pattern) => pattern.id === patternId)
+    ) {
+      setSelectedPatternId(patternId)
       return
     }
     dispatch({ type: 'node-selected', nodeId: state.selectedNodeId })
@@ -243,6 +271,10 @@ export function AppearancePanel({
     const patternHidden =
       layerId === DECORATION_PATTERN_LAYER_ID &&
       decoration.pattern?.visible === false
+    const patternId = patternIdFromDecorationLayer(layerId)
+    const selectedLayerPattern = decoration.patterns.find(
+      (candidate) => candidate.id === patternId,
+    )
     const frame = decoration.frames.find(
       (candidate) => decorationFrameLayerId(candidate.id) === layerId,
     )
@@ -255,6 +287,7 @@ export function AppearancePanel({
     )
     const hiddenByElement =
       patternHidden ||
+      selectedLayerPattern?.visible === false ||
       frame?.visible === false ||
       image?.visible === false ||
       text?.visible === false
@@ -265,6 +298,15 @@ export function AppearancePanel({
       if (patternHidden && decoration.pattern) {
         updateDecoration({
           pattern: { ...decoration.pattern, visible: true },
+          hiddenLayerIds,
+        })
+      } else if (selectedLayerPattern) {
+        updateDecoration({
+          patterns: decoration.patterns.map((pattern) =>
+            pattern.id === selectedLayerPattern.id
+              ? { ...pattern, visible: true }
+              : pattern,
+          ),
           hiddenLayerIds,
         })
       } else if (frame) {
@@ -313,6 +355,11 @@ export function AppearancePanel({
     if (layerId === DECORATION_PATTERN_LAYER_ID) {
       return decoration.pattern?.visible === false
     }
+    const patternId = patternIdFromDecorationLayer(layerId)
+    const pattern = decoration.patterns.find(
+      (candidate) => candidate.id === patternId,
+    )
+    if (pattern) return !pattern.visible
     const frame = decoration.frames.find(
       (candidate) => decorationFrameLayerId(candidate.id) === layerId,
     )
@@ -336,6 +383,17 @@ export function AppearancePanel({
     }
     if (layerId === DECORATION_PATTERN_LAYER_ID) {
       updateDecoration({ ...commonPatch, pattern: null })
+      return
+    }
+    const patternId = patternIdFromDecorationLayer(layerId)
+    if (patternId) {
+      updateDecoration({
+        ...commonPatch,
+        patterns: decoration.patterns.filter(
+          (candidate) => candidate.id !== patternId,
+        ),
+      })
+      if (selectedPatternId === patternId) setSelectedPatternId(null)
       return
     }
     const preset = DECORATION_PRESETS.find(
@@ -403,46 +461,36 @@ export function AppearancePanel({
     <div className={'appearance-panel-content'} aria-label={'外观面板'}>
       <div className={'panel-header'}>
         <div>
-          <p className={'panel-eyebrow'}>CANVAS APPEARANCE</p>
           <h2>外观</h2>
         </div>
-        <span className={'panel-count'}>
-          {canvas.width} × {canvas.height}
-        </span>
-      </div>
-      <p className={'panel-note'}>
-        APP 装饰素材、背景图案、矩形、画布和标签范围统一在这里调整。
-      </p>
-
-      <div
-        className={'appearance-tab-list'}
-        role={'tablist'}
-        aria-label={'外观设置分类'}
-      >
-        {(
-          [
-            ['decoration', '装饰'],
-            ['layers', '图层'],
-            ['canvas', '画布'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            type={'button'}
-            role={'tab'}
-            aria-selected={appearanceTab === id}
-            className={appearanceTab === id ? 'is-selected' : ''}
-            onClick={() => {
-              setAppearanceTab(id)
-              if (id !== 'canvas') onContentBoundsEditingChange?.(false)
-            }}
-            key={id}
-          >
-            {label}
-            {id === 'layers' ? (
-              <small>{resolvedLayerOrder.length}</small>
-            ) : null}
-          </button>
-        ))}
+        <div
+          className={'panel-header-actions appearance-header-tabs'}
+          role={'tablist'}
+          aria-label={'外观设置分类'}
+        >
+          {(
+            [
+              ['decoration', '装饰'],
+              ['canvas', '画布'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              type={'button'}
+              role={'tab'}
+              aria-selected={appearanceTab === id}
+              className={
+                'ghost-button' + (appearanceTab === id ? ' is-selected' : '')
+              }
+              onClick={() => {
+                setAppearanceTab(id)
+                if (id !== 'canvas') onContentBoundsEditingChange?.(false)
+              }}
+              key={id}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <section
@@ -457,25 +505,6 @@ export function AppearancePanel({
             <div>
               <strong>装饰素材</strong>
               <small>来自 APP 创作页，可叠加使用并进入 PNG</small>
-            </div>
-            <div className={'decoration-filter'} aria-label={'装饰筛选'}>
-              {(
-                [
-                  ['all', '全部'],
-                  ['element', '元素'],
-                  ['background', '背景'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  type={'button'}
-                  className={decorationFilter === id ? 'is-selected' : ''}
-                  aria-pressed={decorationFilter === id}
-                  onClick={() => setDecorationFilter(id)}
-                  key={id}
-                >
-                  {label}
-                </button>
-              ))}
             </div>
           </div>
           <div className={'decoration-preset-grid'}>
@@ -516,28 +545,24 @@ export function AppearancePanel({
             {decorationFilter !== 'element' ? (
               <button
                 type={'button'}
-                className={decoration.pattern ? 'is-selected' : ''}
-                aria-pressed={Boolean(decoration.pattern)}
-                onClick={() =>
+                disabled={decoration.patterns.length >= 20}
+                onClick={() => {
+                  const id = createEntityId('decoration-pattern')
                   updateDecoration({
-                    pattern: decoration.pattern
-                      ? null
-                      : { ...DEFAULT_DECORATION_PATTERN },
+                    patterns: [
+                      ...decoration.patterns,
+                      {
+                        id,
+                        name: '图案纹理' + (decoration.patterns.length + 1),
+                        ...DEFAULT_DECORATION_PATTERN,
+                      },
+                    ],
                   })
-                }
+                  setSelectedPatternId(id)
+                }}
               >
-                <span
-                  className={'decoration-pattern-preview'}
-                  style={
-                    decoration.pattern
-                      ? {
-                          backgroundColor: decoration.pattern.backgroundColor,
-                          color: decoration.pattern.foregroundColor,
-                        }
-                      : undefined
-                  }
-                />
-                <small>自定义图案</small>
+                <span className={'decoration-pattern-preview'} />
+                <small>图案纹理</small>
               </button>
             ) : null}
             {decorationFilter !== 'background' ? (
@@ -592,6 +617,32 @@ export function AppearancePanel({
                   />
                   <strong>{frame.name}</strong>
                   <small>{frame.visible ? '显示中' : '已隐藏'}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {decoration.patterns.length > 0 ? (
+            <div className={'decoration-frame-list'} aria-label={'图案纹理'}>
+              {decoration.patterns.map((pattern) => (
+                <button
+                  type={'button'}
+                  className={
+                    selectedPattern?.id === pattern.id ? 'is-selected' : ''
+                  }
+                  aria-pressed={selectedPattern?.id === pattern.id}
+                  onClick={() => setSelectedPatternId(pattern.id)}
+                  key={pattern.id}
+                >
+                  <span
+                    className={'decoration-pattern-preview'}
+                    style={{
+                      backgroundColor: pattern.backgroundColor,
+                      color: pattern.foregroundColor,
+                    }}
+                  />
+                  <strong>{pattern.name}</strong>
+                  <small>{pattern.visible ? '显示中' : '已隐藏'}</small>
                 </button>
               ))}
             </div>
@@ -708,41 +759,38 @@ export function AppearancePanel({
             </div>
           ) : null}
 
-          {decoration.pattern ? (
+          {selectedPattern ? (
             <div className={'decoration-settings-block'}>
               <div className={'appearance-section-heading'}>
-                <strong>自定义背景图案</strong>
+                <div>
+                  <strong>图案纹理</strong>
+                  <small>{selectedPattern.name}</small>
+                </div>
                 <label className={'profile-visibility-toggle'}>
                   <input
                     type={'checkbox'}
-                    checked={decoration.pattern.visible}
+                    checked={selectedPattern.visible}
                     onChange={(event) =>
-                      updateDecoration({
-                        pattern: {
-                          ...decoration.pattern!,
-                          visible: event.currentTarget.checked,
-                        },
+                      updateSelectedPattern({
+                        visible: event.currentTarget.checked,
                       })
                     }
                   />
-                  <span>{decoration.pattern.visible ? '显示' : '隐藏'}</span>
+                  <span>{selectedPattern.visible ? '显示' : '隐藏'}</span>
                 </label>
               </div>
               <label className={'appearance-select'}>
                 <span>图案类型</span>
                 <select
-                  value={decoration.pattern.type}
+                  value={selectedPattern.type}
                   onChange={(event) =>
-                    updateDecoration({
-                      pattern: {
-                        ...decoration.pattern!,
-                        type:
-                          event.currentTarget.value === 'checker'
-                            ? 'checker'
-                            : event.currentTarget.value === 'grid'
-                              ? 'grid'
-                              : 'dots',
-                      },
+                    updateSelectedPattern({
+                      type:
+                        event.currentTarget.value === 'checker'
+                          ? 'checker'
+                          : event.currentTarget.value === 'grid'
+                            ? 'grid'
+                            : 'dots',
                     })
                   }
                 >
@@ -757,20 +805,15 @@ export function AppearancePanel({
                   type={'range'}
                   min={10}
                   max={100}
-                  value={decoration.pattern.size}
+                  value={selectedPattern.size}
                   onChange={(event) =>
-                    updateDecoration(
-                      {
-                        pattern: {
-                          ...decoration.pattern!,
-                          size: Number(event.currentTarget.value),
-                        },
-                      },
+                    updateSelectedPattern(
+                      { size: Number(event.currentTarget.value) },
                       'pattern-size',
                     )
                   }
                 />
-                <output>{Math.round(decoration.pattern.size)}px</output>
+                <output>{Math.round(selectedPattern.size)}px</output>
               </label>
               <label className={'appearance-slider'}>
                 <span>旋转</span>
@@ -778,44 +821,32 @@ export function AppearancePanel({
                   type={'range'}
                   min={0}
                   max={180}
-                  value={decoration.pattern.rotation}
+                  value={selectedPattern.rotation}
                   onChange={(event) =>
-                    updateDecoration(
-                      {
-                        pattern: {
-                          ...decoration.pattern!,
-                          rotation: Number(event.currentTarget.value),
-                        },
-                      },
+                    updateSelectedPattern(
+                      { rotation: Number(event.currentTarget.value) },
                       'pattern-rotation',
                     )
                   }
                 />
-                <output>{Math.round(decoration.pattern.rotation)}°</output>
+                <output>{Math.round(selectedPattern.rotation)}°</output>
               </label>
-              {decoration.pattern.type !== 'checker' ? (
+              {selectedPattern.type !== 'checker' ? (
                 <label className={'appearance-slider'}>
                   <span>粗细</span>
                   <input
                     type={'range'}
                     min={10}
                     max={100}
-                    value={decoration.pattern.weight * 100}
+                    value={selectedPattern.weight * 100}
                     onChange={(event) =>
-                      updateDecoration(
-                        {
-                          pattern: {
-                            ...decoration.pattern!,
-                            weight: Number(event.currentTarget.value) / 100,
-                          },
-                        },
+                      updateSelectedPattern(
+                        { weight: Number(event.currentTarget.value) / 100 },
                         'pattern-weight',
                       )
                     }
                   />
-                  <output>
-                    {Math.round(decoration.pattern.weight * 100)}%
-                  </output>
+                  <output>{Math.round(selectedPattern.weight * 100)}%</output>
                 </label>
               ) : null}
               <div className={'decoration-color-row'}>
@@ -823,13 +854,10 @@ export function AppearancePanel({
                   <span>背景颜色</span>
                   <input
                     type={'color'}
-                    value={decoration.pattern.backgroundColor}
+                    value={selectedPattern.backgroundColor}
                     onChange={(event) =>
-                      updateDecoration({
-                        pattern: {
-                          ...decoration.pattern!,
-                          backgroundColor: event.currentTarget.value,
-                        },
+                      updateSelectedPattern({
+                        backgroundColor: event.currentTarget.value,
                       })
                     }
                   />
@@ -838,18 +866,24 @@ export function AppearancePanel({
                   <span>图案颜色</span>
                   <input
                     type={'color'}
-                    value={decoration.pattern.foregroundColor}
+                    value={selectedPattern.foregroundColor}
                     onChange={(event) =>
-                      updateDecoration({
-                        pattern: {
-                          ...decoration.pattern!,
-                          foregroundColor: event.currentTarget.value,
-                        },
+                      updateSelectedPattern({
+                        foregroundColor: event.currentTarget.value,
                       })
                     }
                   />
                 </label>
               </div>
+              <button
+                type={'button'}
+                className={'danger-button'}
+                onClick={() =>
+                  deleteLayer(decorationPatternLayerId(selectedPattern.id))
+                }
+              >
+                删除这个图案纹理
+              </button>
             </div>
           ) : null}
 
@@ -956,276 +990,289 @@ export function AppearancePanel({
         </div>
         <div
           className={'decoration-layer-manager'}
-          hidden={appearanceTab !== 'layers'}
+          hidden={appearanceTab !== 'decoration'}
         >
           <div className={'appearance-section-heading'}>
             <div>
               <strong>图层</strong>
               <small>列表从上到下对应画布从前到后</small>
             </div>
-            <span className={'panel-count'}>{resolvedLayerOrder.length}</span>
-          </div>
-          {selectedDecorationImage || selectedFrame ? (
-            <button
-              type={'button'}
-              className={'layer-edit-selection-button'}
-              onClick={() => setAppearanceTab('decoration')}
-            >
-              <span>
-                <strong>
-                  {selectedDecorationImage?.name ?? selectedFrame?.name}
-                </strong>
-                <small>已在画布同步选中</small>
-              </span>
-              <em>调整参数 →</em>
-            </button>
-          ) : state.editingCustomTextId ? (
-            <p className={'layer-selection-note'}>
-              已选中文字图层；文字内容和字体参数继续在“资料”中调整。
-            </p>
-          ) : (
-            <p className={'layer-selection-note'}>
-              点击图层可同步选择画布元素，按住 ≡ 可拖拽排序。
-            </p>
-          )}
-          <div
-            className={'decoration-layer-list'}
-            onPointerMove={dragLayerAtPointer}
-            onPointerUp={finishLayerDrag}
-            onPointerCancel={finishLayerDrag}
-          >
-            {resolvedLayerOrder.map((layerId, index) => {
-              const hidden = isLayerHidden(layerId)
-              const isData = layerId === DECORATION_DATA_LAYER_ID
-              const textId = customTextIdFromDecorationLayer(layerId)
-              const selected =
-                state.editingDecorationImageId !== null &&
-                layerId ===
-                  decorationImageLayerId(state.editingDecorationImageId)
-                  ? true
-                  : state.editingDecorationFrameId !== null &&
-                      layerId ===
-                        decorationFrameLayerId(state.editingDecorationFrameId)
-                    ? true
-                    : textId !== null && textId === state.editingCustomTextId
-              return (
-                <div
-                  className={
-                    (hidden ? 'is-hidden ' : '') +
-                    (selected ? 'is-selected ' : '') +
-                    (draggingLayerId === layerId ? 'is-dragging' : '')
-                  }
-                  data-layer-id={layerId}
-                  onClick={() => selectLayer(layerId)}
-                  key={layerId}
-                >
-                  <button
-                    type={'button'}
-                    className={'layer-drag-handle'}
-                    aria-label={'拖动或使用方向键排序 ' + layerName(layerId)}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key !== 'ArrowUp' &&
-                        event.key !== 'ArrowDown'
-                      ) {
-                        return
-                      }
-                      event.preventDefault()
-                      event.stopPropagation()
-                      moveLayer(
-                        layerId,
-                        event.key === 'ArrowUp' ? 'up' : 'down',
-                      )
-                    }}
-                    onPointerDown={(event) => {
-                      layerDragRef.current = layerId
-                      setDraggingLayerId(layerId)
-                      event.currentTarget.setPointerCapture(event.pointerId)
-                      event.stopPropagation()
-                    }}
-                  >
-                    ≡
-                  </button>
-                  <button
-                    type={'button'}
-                    className={'layer-visibility-button'}
-                    aria-label={
-                      (hidden ? '显示图层 ' : '隐藏图层 ') + layerName(layerId)
-                    }
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      toggleLayerVisibility(layerId)
-                    }}
-                  >
-                    {hidden ? '○' : '●'}
-                  </button>
-                  <span>
-                    <strong>{layerName(layerId)}</strong>
-                    <small>{isData ? '数据' : textId ? '文字' : '装饰'}</small>
-                  </span>
-                  <button
-                    type={'button'}
-                    aria-label={'上移图层 ' + layerName(layerId)}
-                    disabled={index === 0}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveLayer(layerId, 'up')
-                    }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type={'button'}
-                    aria-label={'下移图层 ' + layerName(layerId)}
-                    disabled={index === resolvedLayerOrder.length - 1}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveLayer(layerId, 'down')
-                    }}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type={'button'}
-                    aria-label={'删除图层 ' + layerName(layerId)}
-                    disabled={isData}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      deleteLayer(layerId)
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              )
-            })}
-            {canvas.templateId !== 'custom' ? (
-              <div
-                className={
-                  decoration.templateBackgroundVisible ? '' : 'is-hidden'
-                }
-              >
-                <button type={'button'} disabled={true} aria-hidden={true}>
-                  ≡
-                </button>
-                <button
-                  type={'button'}
-                  className={'layer-visibility-button'}
-                  aria-label={'切换模板背景'}
-                  onClick={() =>
-                    updateDecoration({
-                      templateBackgroundVisible:
-                        !decoration.templateBackgroundVisible,
-                    })
-                  }
-                >
-                  {decoration.templateBackgroundVisible ? '●' : '○'}
-                </button>
-                <span>
-                  <strong>模板背景</strong>
-                  <small>固定底层</small>
-                </span>
-                <button type={'button'} disabled={true}>
-                  ↑
-                </button>
-                <button type={'button'} disabled={true}>
-                  ↓
-                </button>
-                <button type={'button'} disabled={true}>
-                  ×
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <section
-        className={'appearance-card'}
-        hidden={appearanceTab !== 'canvas'}
-      >
-        <div className={'appearance-section-heading'}>
-          <div>
-            <strong>画布比例</strong>
-            <small>
-              {sizeLocked
-                ? '当前模板已锁定画布比例'
-                : '选择常用尺寸或输入自定义像素'}
-            </small>
-          </div>
-        </div>
-        <div className={'canvas-preset-grid'}>
-          {CANVAS_PRESETS.map((preset) => {
-            const selected =
-              canvas.width === preset.width && canvas.height === preset.height
-            return (
+            <div className={'layer-heading-actions'}>
               <button
                 type={'button'}
-                className={selected ? 'is-selected' : ''}
-                aria-pressed={selected}
-                disabled={sizeLocked}
-                onClick={() => resizeCanvas(preset.width, preset.height)}
-                key={preset.id}
+                className={'layer-collapse-button'}
+                aria-expanded={layersExpanded}
+                aria-label={layersExpanded ? '收起图层' : '展开图层'}
+                onClick={() => setLayersExpanded((expanded) => !expanded)}
+              />
+            </div>
+          </div>
+          {layersExpanded ? (
+            <>
+              {selectedDecorationImage || selectedFrame ? (
+                <button
+                  type={'button'}
+                  className={'layer-edit-selection-button'}
+                  onClick={() => setAppearanceTab('decoration')}
+                >
+                  <span>
+                    <strong>
+                      {selectedDecorationImage?.name ?? selectedFrame?.name}
+                    </strong>
+                    <small>已在画布同步选中</small>
+                  </span>
+                  <em>调整参数 →</em>
+                </button>
+              ) : state.editingCustomTextId ? (
+                <p className={'layer-selection-note'}>
+                  已选中文字图层；文字内容和字体参数继续在“资料”中调整。
+                </p>
+              ) : (
+                <p className={'layer-selection-note'}>
+                  点击图层可同步选择画布元素，按住 ≡ 可拖拽排序。
+                </p>
+              )}
+              <div
+                className={'decoration-layer-list'}
+                onPointerMove={dragLayerAtPointer}
+                onPointerUp={finishLayerDrag}
+                onPointerCancel={finishLayerDrag}
               >
-                <span
-                  className={'canvas-preset-shape'}
-                  style={{ aspectRatio: preset.width + ' / ' + preset.height }}
-                />
-                <strong>{preset.name}</strong>
-                <small>
-                  {preset.width} × {preset.height}
-                </small>
-              </button>
-            )
-          })}
+                {resolvedLayerOrder.map((layerId, index) => {
+                  const hidden = isLayerHidden(layerId)
+                  const isData = layerId === DECORATION_DATA_LAYER_ID
+                  const textId = customTextIdFromDecorationLayer(layerId)
+                  const patternId = patternIdFromDecorationLayer(layerId)
+                  const selected =
+                    state.editingDecorationImageId !== null &&
+                    layerId ===
+                      decorationImageLayerId(state.editingDecorationImageId)
+                      ? true
+                      : state.editingDecorationFrameId !== null &&
+                          layerId ===
+                            decorationFrameLayerId(
+                              state.editingDecorationFrameId,
+                            )
+                        ? true
+                        : patternId !== null && patternId === selectedPatternId
+                          ? true
+                          : textId !== null &&
+                            textId === state.editingCustomTextId
+                  return (
+                    <div
+                      className={
+                        (hidden ? 'is-hidden ' : '') +
+                        (selected ? 'is-selected ' : '') +
+                        (draggingLayerId === layerId ? 'is-dragging' : '')
+                      }
+                      data-layer-id={layerId}
+                      onClick={() => selectLayer(layerId)}
+                      key={layerId}
+                    >
+                      <button
+                        type={'button'}
+                        className={'layer-drag-handle'}
+                        aria-label={
+                          '拖动或使用方向键排序 ' + layerName(layerId)
+                        }
+                        onKeyDown={(event) => {
+                          if (
+                            event.key !== 'ArrowUp' &&
+                            event.key !== 'ArrowDown'
+                          ) {
+                            return
+                          }
+                          event.preventDefault()
+                          event.stopPropagation()
+                          moveLayer(
+                            layerId,
+                            event.key === 'ArrowUp' ? 'up' : 'down',
+                          )
+                        }}
+                        onPointerDown={(event) => {
+                          layerDragRef.current = layerId
+                          setDraggingLayerId(layerId)
+                          event.currentTarget.setPointerCapture(event.pointerId)
+                          event.stopPropagation()
+                        }}
+                      >
+                        ≡
+                      </button>
+                      <button
+                        type={'button'}
+                        className={'layer-visibility-button'}
+                        aria-label={
+                          (hidden ? '显示图层 ' : '隐藏图层 ') +
+                          layerName(layerId)
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleLayerVisibility(layerId)
+                        }}
+                      >
+                        <img src={eyeIconUrl} alt={''} aria-hidden={true} />
+                      </button>
+                      <span>
+                        <strong>{layerName(layerId)}</strong>
+                        <small>
+                          {isData ? '数据' : textId ? '文字' : '装饰'}
+                        </small>
+                      </span>
+                      <button
+                        type={'button'}
+                        aria-label={'上移图层 ' + layerName(layerId)}
+                        disabled={index === 0}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          moveLayer(layerId, 'up')
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type={'button'}
+                        aria-label={'下移图层 ' + layerName(layerId)}
+                        disabled={index === resolvedLayerOrder.length - 1}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          moveLayer(layerId, 'down')
+                        }}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type={'button'}
+                        aria-label={'删除图层 ' + layerName(layerId)}
+                        disabled={isData}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          deleteLayer(layerId)
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )
+                })}
+                {canvas.templateId !== 'custom' ? (
+                  <div
+                    className={
+                      decoration.templateBackgroundVisible ? '' : 'is-hidden'
+                    }
+                  >
+                    <button type={'button'} disabled={true} aria-hidden={true}>
+                      ≡
+                    </button>
+                    <button
+                      type={'button'}
+                      className={'layer-visibility-button'}
+                      aria-label={'切换模板背景'}
+                      onClick={() =>
+                        updateDecoration({
+                          templateBackgroundVisible:
+                            !decoration.templateBackgroundVisible,
+                        })
+                      }
+                    >
+                      <img src={eyeIconUrl} alt={''} aria-hidden={true} />
+                    </button>
+                    <span>
+                      <strong>模板背景</strong>
+                      <small>固定底层</small>
+                    </span>
+                    <button type={'button'} disabled={true}>
+                      ↑
+                    </button>
+                    <button type={'button'} disabled={true}>
+                      ↓
+                    </button>
+                    <button type={'button'} disabled={true}>
+                      ×
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </div>
-
-        <form
-          className={'canvas-custom-size'}
-          onSubmit={applyCustomSize}
-          key={canvas.width + ':' + canvas.height}
-        >
-          <label>
-            <span>宽度</span>
-            <input
-              type={'number'}
-              min={320}
-              max={4096}
-              inputMode={'numeric'}
-              name={'width'}
-              defaultValue={canvas.width}
-              disabled={sizeLocked}
-            />
-          </label>
-          <span aria-hidden={true}>×</span>
-          <label>
-            <span>高度</span>
-            <input
-              type={'number'}
-              min={320}
-              max={4096}
-              inputMode={'numeric'}
-              name={'height'}
-              defaultValue={canvas.height}
-              disabled={sizeLocked}
-            />
-          </label>
-          <button
-            type={'submit'}
-            className={'compact-button'}
-            disabled={sizeLocked}
-          >
-            应用
-          </button>
-        </form>
-        <p className={'appearance-help'}>
-          {sizeLocked
-            ? '请在模板面板选择“自定义”后调整画布尺寸。'
-            : '允许 320–4096 像素，PNG 按此尺寸导出。'}
-        </p>
       </section>
+
+      {!sizeLocked ? (
+        <section
+          className={'appearance-card'}
+          hidden={appearanceTab !== 'canvas'}
+        >
+          <div className={'appearance-section-heading'}>
+            <div>
+              <strong>画布比例</strong>
+              <small>选择常用尺寸或输入自定义像素</small>
+            </div>
+          </div>
+          <div className={'canvas-preset-grid'}>
+            {CANVAS_PRESETS.map((preset) => {
+              const selected =
+                canvas.width === preset.width && canvas.height === preset.height
+              return (
+                <button
+                  type={'button'}
+                  className={selected ? 'is-selected' : ''}
+                  aria-pressed={selected}
+                  onClick={() => resizeCanvas(preset.width, preset.height)}
+                  key={preset.id}
+                >
+                  <span
+                    className={'canvas-preset-shape'}
+                    style={{
+                      aspectRatio: preset.width + ' / ' + preset.height,
+                    }}
+                  />
+                  <strong>{preset.name}</strong>
+                  <small>
+                    {preset.width} × {preset.height}
+                  </small>
+                </button>
+              )
+            })}
+          </div>
+          <form
+            className={'canvas-custom-size'}
+            onSubmit={applyCustomSize}
+            key={canvas.width + ':' + canvas.height}
+          >
+            <label>
+              <span>宽度</span>
+              <input
+                type={'number'}
+                min={320}
+                max={4096}
+                inputMode={'numeric'}
+                name={'width'}
+                defaultValue={canvas.width}
+              />
+            </label>
+            <span aria-hidden={true}>×</span>
+            <label>
+              <span>高度</span>
+              <input
+                type={'number'}
+                min={320}
+                max={4096}
+                inputMode={'numeric'}
+                name={'height'}
+                defaultValue={canvas.height}
+              />
+            </label>
+            <button type={'submit'} className={'compact-button'}>
+              应用
+            </button>
+          </form>
+          <p className={'appearance-help'}>
+            允许 320–4096 像素，PNG 按此尺寸导出。
+          </p>
+        </section>
+      ) : null}
       <section
-        className={'appearance-card'}
+        className={'appearance-card appearance-bounds-card'}
         hidden={appearanceTab !== 'canvas'}
       >
         <ContentBoundsPanel
@@ -1239,96 +1286,36 @@ export function AppearancePanel({
         className={'appearance-card'}
         hidden={appearanceTab !== 'canvas'}
       >
-        <div className={'appearance-section-heading'}>
-          <div>
-            <strong>背景颜色</strong>
-            <small>{canvas.backgroundColor.toUpperCase()}</small>
-          </div>
-          <label className={'appearance-color-picker'}>
-            <span className={'sr-only'}>自定义背景颜色</span>
-            <input
-              type={'color'}
-              value={canvas.backgroundColor}
-              onChange={(event) =>
-                dispatch({
-                  type: 'background-changed',
-                  color: event.currentTarget.value,
-                  at: timestamp(),
-                })
-              }
-            />
-          </label>
-        </div>
-        <div className={'background-swatch-grid'}>
-          {BACKGROUND_COLORS.map((color) => (
-            <button
-              type={'button'}
-              aria-label={'背景颜色 ' + color}
-              aria-pressed={canvas.backgroundColor.toUpperCase() === color}
-              className={
-                canvas.backgroundColor.toUpperCase() === color
-                  ? 'is-selected'
-                  : ''
-              }
-              style={{ backgroundColor: color }}
-              onClick={() =>
-                dispatch({
-                  type: 'background-changed',
-                  color,
-                  at: timestamp(),
-                })
-              }
-              key={color}
-            />
-          ))}
-        </div>
+        <GlobalLabelSettingsPanel embedded={true} />
       </section>
 
-      <section
-        className={'appearance-card'}
-        hidden={appearanceTab !== 'canvas'}
-      >
-        <div className={'appearance-section-heading'}>
-          <div>
-            <strong>基础描边</strong>
-            <small>与全局标签设置同步</small>
+      {!sizeLocked ? (
+        <section
+          className={'appearance-card'}
+          hidden={appearanceTab !== 'canvas'}
+        >
+          <div className={'appearance-section-heading'}>
+            <div>
+              <strong>背景颜色</strong>
+              <small>{canvas.backgroundColor.toUpperCase()}</small>
+            </div>
+            <label className={'appearance-color-picker'}>
+              <span className={'sr-only'}>自定义背景颜色</span>
+              <input
+                type={'color'}
+                value={canvas.backgroundColor}
+                onChange={(event) =>
+                  dispatch({
+                    type: 'background-changed',
+                    color: event.currentTarget.value,
+                    at: timestamp(),
+                  })
+                }
+              />
+            </label>
           </div>
-        </div>
-        <label className={'appearance-slider'}>
-          <span>分类</span>
-          <input
-            type={'range'}
-            min={0}
-            max={8}
-            step={0.5}
-            value={labels.categoryStrokeWidth}
-            onChange={(event) =>
-              updateStroke(
-                { categoryStrokeWidth: Number(event.currentTarget.value) },
-                'appearance-category-stroke',
-              )
-            }
-          />
-          <output>{labels.categoryStrokeWidth.toFixed(1)}</output>
-        </label>
-        <label className={'appearance-slider'}>
-          <span>标签</span>
-          <input
-            type={'range'}
-            min={0}
-            max={8}
-            step={0.5}
-            value={labels.labelStrokeWidth}
-            onChange={(event) =>
-              updateStroke(
-                { labelStrokeWidth: Number(event.currentTarget.value) },
-                'appearance-label-stroke',
-              )
-            }
-          />
-          <output>{labels.labelStrokeWidth.toFixed(1)}</output>
-        </label>
-      </section>
+        </section>
+      ) : null}
     </div>
   )
 }

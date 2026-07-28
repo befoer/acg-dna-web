@@ -448,12 +448,12 @@ function drawFooter(
   context.save()
   context.textAlign = 'right'
   context.textBaseline = 'alphabetic'
-  context.fillStyle = 'rgba(32, 32, 37, 0.38)'
-  context.font = '600 18px Inter, system-ui, sans-serif'
+  context.fillStyle = 'rgba(32, 32, 37, 0.28)'
+  context.font = '600 16px Inter, system-ui, sans-serif'
   context.fillText(
-    'MADE LOCALLY WITH ACG DNA WEB',
-    document.canvas.width * 0.935,
-    document.canvas.height * 0.965,
+    'ACG-DNA.COM',
+    document.canvas.width * 0.992,
+    document.canvas.height * 0.993,
   )
   context.restore()
 }
@@ -556,7 +556,9 @@ export function renderGraph(
     (document.canvas.contentBounds.right - document.canvas.contentBounds.left) *
     width
   const drawDataLayer = () => {
-    if (template.showCanvasText) drawHeader(context, document)
+    if (template.showCanvasText && template.id !== 'custom') {
+      drawHeader(context, document)
+    }
     context.save()
     rotateForContentBounds(context, document)
     if (layout.roots.length === 0) {
@@ -633,6 +635,55 @@ export function renderGraph(
   return layout
 }
 
+export async function createGraphThumbnailDataUrl(
+  document: GraphDocument,
+  assets: LocalImageAssetMap,
+): Promise<string> {
+  const source = window.document.createElement('canvas')
+  source.width = document.canvas.width
+  source.height = document.canvas.height
+  const context = source.getContext('2d')
+  if (!context) throw new Error('Canvas 2D unavailable')
+
+  await Promise.all([
+    ...document.categories.map((category) =>
+      ensureGraphFontLoaded(
+        resolveCategoryAppearance(category, document.canvas.labelSettings),
+      ),
+    ),
+    ensureProfileFontsLoaded(document.profile),
+  ])
+  const [templateBackground, profileTemplateAssets, decorationPresetAssets] =
+    await Promise.all([
+      loadTemplateBackground(document.canvas.templateId),
+      loadProfileTemplateAssets(
+        document.profile.subTemplateId,
+        document.profile.gender,
+      ),
+      loadDecorationPresetAssets(),
+    ])
+  renderGraph(context, document, assets, {
+    templateBackground,
+    decorationPresetAssets,
+    profileTemplateAssets,
+    layout: createGraphLayout(document),
+    drawNodeText: true,
+    drawProfileTemplate: true,
+  })
+
+  const maxWidth = 320
+  const maxHeight = 180
+  const scale = Math.min(maxWidth / source.width, maxHeight / source.height)
+  const thumbnail = window.document.createElement('canvas')
+  thumbnail.width = Math.max(1, Math.round(source.width * scale))
+  thumbnail.height = Math.max(1, Math.round(source.height * scale))
+  const thumbnailContext = thumbnail.getContext('2d')
+  if (!thumbnailContext) throw new Error('Canvas 2D unavailable')
+  thumbnailContext.imageSmoothingEnabled = true
+  thumbnailContext.imageSmoothingQuality = 'high'
+  thumbnailContext.drawImage(source, 0, 0, thumbnail.width, thumbnail.height)
+  return thumbnail.toDataURL('image/png')
+}
 function safeFileName(name: string): string {
   const normalized = name
     .trim()

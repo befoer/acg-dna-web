@@ -24,6 +24,7 @@ interface LocalImageEditorProps {
   title: string
   onlineImageSeed?: OnlineImageSearchResult
   onSelectOnlineImage?: (result: OnlineImageSearchResult) => Promise<boolean>
+  onSearch?: () => void
   onCancel: () => void
   onApply: (transform: GraphImageTransform) => void
 }
@@ -58,6 +59,7 @@ export function LocalImageEditor({
   title,
   onlineImageSeed,
   onSelectOnlineImage,
+  onSearch,
   onCancel,
   onApply,
 }: LocalImageEditorProps) {
@@ -80,6 +82,8 @@ export function LocalImageEditor({
   const [selectingAniListId, setSelectingAniListId] = useState<string | null>(
     null,
   )
+  const supportsAniListCandidates =
+    onlineImageSeed?.kind === 'character' || onlineImageSeed?.kind === 'anime'
   const onlineImageCandidates = onlineImageSeed
     ? [onlineImageSeed, ...anilistCandidates]
     : anilistCandidates
@@ -103,6 +107,7 @@ export function LocalImageEditor({
     if (
       !onlineImageSeed ||
       onlineImageSeed.provider !== 'bangumi' ||
+      !supportsAniListCandidates ||
       !onSelectOnlineImage
     ) {
       return
@@ -128,7 +133,7 @@ export function LocalImageEditor({
         )
       })
     return () => controller.abort()
-  }, [onlineImageSeed, onSelectOnlineImage])
+  }, [onlineImageSeed, onSelectOnlineImage, supportsAniListCandidates])
 
   const createGesture = (): ImageGesture | null => {
     const canvas = canvasRef.current
@@ -233,7 +238,7 @@ export function LocalImageEditor({
 
   const defaultTransform =
     asset.source?.provider === 'bangumi' &&
-    onlineImageSeed?.kind === 'character'
+    ['character', 'singer'].includes(onlineImageSeed?.kind ?? '')
       ? { ...DEFAULT_IMAGE_TRANSFORM, offsetY: 1 }
       : DEFAULT_IMAGE_TRANSFORM
   const finishPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -309,17 +314,27 @@ export function LocalImageEditor({
       >
         <div className={'image-editor-heading'}>
           <div>
-            <p>LOCAL IMAGE</p>
             <h2 id={'image-editor-title'}>{title}</h2>
           </div>
-          <button
-            type={'button'}
-            className={'profile-icon-button'}
-            aria-label={'关闭图片编辑器'}
-            onClick={onCancel}
-          >
-            ×
-          </button>
+          <div className={'image-editor-heading-actions'}>
+            {onSearch ? (
+              <button
+                type={'button'}
+                className={'ghost-button'}
+                onClick={onSearch}
+              >
+                搜索图片
+              </button>
+            ) : null}
+            <button
+              type={'button'}
+              className={'profile-icon-button'}
+              aria-label={'关闭图片编辑器'}
+              onClick={onCancel}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className={'image-editor-layout'}>
@@ -391,7 +406,9 @@ export function LocalImageEditor({
             <small>{asset.fileName}</small>
           </div>
           <div className={'image-editor-controls'}>
-            {onlineImageSeed?.provider === 'bangumi' && onSelectOnlineImage ? (
+            {onlineImageSeed?.provider === 'bangumi' &&
+            supportsAniListCandidates &&
+            onSelectOnlineImage ? (
               <section className={'image-editor-online-candidates'}>
                 <div className={'image-editor-online-heading'}>
                   <strong>图片候选</strong>

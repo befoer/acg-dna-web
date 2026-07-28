@@ -16,6 +16,7 @@ import {
   findGraphNode,
   type GraphDocument,
 } from '../domain/graph'
+import { userErrorMessage } from '../errors/userErrorMessage'
 import {
   loadLocalImageAsset,
   loadOnlineImageAsset,
@@ -879,7 +880,7 @@ export function EditorProvider({
       }
       imageRequestTokensRef.current.delete(nodeId)
       if (!mountedRef.current) return null
-      const message = error instanceof Error ? error.message : '图片读取失败'
+      const message = userErrorMessage(error, '图片读取失败')
       dispatch({ type: 'status-changed', message })
       return null
     }
@@ -921,7 +922,7 @@ export function EditorProvider({
             ...DEFAULT_IMAGE_TRANSFORM,
             offsetY:
               result.provider === 'bangumi' &&
-              (searchSeed?.kind ?? result.kind) === 'character'
+              ['character', 'singer'].includes(searchSeed?.kind ?? result.kind)
                 ? 1
                 : 0,
           },
@@ -935,8 +936,7 @@ export function EditorProvider({
         }
         imageRequestTokensRef.current.delete(nodeId)
         if (!mountedRef.current) return null
-        const message =
-          error instanceof Error ? error.message : '在线图片保存失败'
+        const message = userErrorMessage(error, '在线图片保存失败')
         dispatch({ type: 'status-changed', message })
         return null
       }
@@ -999,7 +999,7 @@ export function EditorProvider({
       if (!mountedRef.current) return null
       dispatch({
         type: 'status-changed',
-        message: error instanceof Error ? error.message : '头像读取失败',
+        message: userErrorMessage(error, '头像读取失败'),
       })
       return null
     }
@@ -1078,7 +1078,7 @@ export function EditorProvider({
       if (!mountedRef.current) return null
       dispatch({
         type: 'status-changed',
-        message: error instanceof Error ? error.message : '装饰图片读取失败',
+        message: userErrorMessage(error, '装饰图片读取失败'),
       })
       return null
     }
@@ -1122,6 +1122,37 @@ export function EditorProvider({
     })
   }, [])
 
+  const loadProjectPreview = useCallback(
+    async (projectId: string) => {
+      if (projectId === activeProjectIdRef.current) {
+        return {
+          document: stateRef.current.document,
+          assets: stateRef.current.assets,
+          release: () => undefined,
+        }
+      }
+      if (!projectRepository) return null
+      try {
+        const snapshot = await projectRepository.loadProject(projectId)
+        if (!snapshot) return null
+        const restored = await restoreProjectAssets(snapshot)
+        let released = false
+        return {
+          document: snapshot.document,
+          assets: restored.assets,
+          release: () => {
+            if (released) return
+            released = true
+            Object.values(restored.assets).forEach(revokeLocalImageAsset)
+          },
+        }
+      } catch {
+        return null
+      }
+    },
+    [projectRepository],
+  )
+
   const value = useMemo(
     () => ({
       state,
@@ -1141,6 +1172,7 @@ export function EditorProvider({
       createProject,
       switchProject,
       duplicateProject,
+      loadProjectPreview,
       deleteProject,
       importProject,
       exportProject,
@@ -1158,6 +1190,7 @@ export function EditorProvider({
       importProject,
       projectActionPending,
       projects,
+      loadProjectPreview,
       retrySave,
       removeImage,
       removeProfileAvatar,

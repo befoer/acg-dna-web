@@ -10,6 +10,7 @@ import { useEditor } from '../editor/editorContext'
 interface CategoryAppearancePanelProps {
   categoryId: string
   onBack: () => void
+  onOpenGlobalSettings: () => void
 }
 
 interface CategorySliderProps {
@@ -32,7 +33,7 @@ function CategorySlider({
   onChange,
 }: CategorySliderProps) {
   return (
-    <label className={'global-slider-row'}>
+    <label className={'category-slider-row'}>
       <span>{label}</span>
       <input
         type={'range'}
@@ -51,6 +52,7 @@ function CategorySlider({
 export function CategoryAppearancePanel({
   categoryId,
   onBack,
+  onOpenGlobalSettings,
 }: CategoryAppearancePanelProps) {
   const { state, dispatch } = useEditor()
   const match = findGraphNode(state.document, categoryId)
@@ -67,20 +69,13 @@ export function CategoryAppearancePanel({
   const globalSettings = state.document.canvas.labelSettings
   const settings = resolveCategoryAppearance(category, globalSettings)
   const hasOverride = Boolean(category.appearance)
+  const hasColorOverride = category.appearance?.colorOverride !== undefined
   const update = (patch: GraphCategoryAppearance, group?: string): void => {
     dispatch({
       type: 'category-appearance-changed',
       categoryId,
       patch,
       ...(group ? { group } : {}),
-      at: new Date().toISOString(),
-    })
-  }
-  const updateCategoryColor = (color: string): void => {
-    dispatch({
-      type: 'node-updated',
-      nodeId: categoryId,
-      patch: { color },
       at: new Date().toISOString(),
     })
   }
@@ -123,23 +118,31 @@ export function CategoryAppearancePanel({
           ←
         </button>
         <div>
-          <p className={'section-kicker'}>CATEGORY STYLE</p>
           <h2>{category.name || '未命名分类'}</h2>
         </div>
-        <button
-          type={'button'}
-          className={'compact-button'}
-          disabled={!hasOverride}
-          onClick={() =>
-            dispatch({
-              type: 'category-appearance-reset',
-              categoryId,
-              at: new Date().toISOString(),
-            })
-          }
-        >
-          跟随全局
-        </button>
+        <div className={'category-settings-header-actions'}>
+          <button
+            type={'button'}
+            className={'ghost-button'}
+            onClick={onOpenGlobalSettings}
+          >
+            全局设置
+          </button>
+          <button
+            type={'button'}
+            className={'compact-button'}
+            disabled={!hasOverride}
+            onClick={() =>
+              dispatch({
+                type: 'category-appearance-reset',
+                categoryId,
+                at: new Date().toISOString(),
+              })
+            }
+          >
+            跟随全局
+          </button>
+        </div>
       </div>
       <p className={'panel-note'}>
         只影响当前分类及其内部标签。未单独修改的项目继续跟随全局标签设置。
@@ -157,7 +160,6 @@ export function CategoryAppearancePanel({
               onClick={() => update({ [option.key]: !option.checked })}
               key={option.key}
             >
-              <span aria-hidden={true}>{option.checked ? '●' : '○'}</span>
               {option.label}
             </button>
           ))}
@@ -250,15 +252,29 @@ export function CategoryAppearancePanel({
         <h3>颜色</h3>
         <label className={'global-color-row'}>
           <span>
-            <strong>分类与标签颜色</strong>
-            <small>{category.color.toUpperCase()}</small>
+            <strong>分类统一标签颜色</strong>
+            <small>仅影响当前一级标签及其内部标签</small>
           </span>
-          <span />
+          <input
+            type={'checkbox'}
+            aria-label={'分类统一标签颜色'}
+            checked={hasColorOverride}
+            onChange={(event) =>
+              update({
+                colorOverride: event.currentTarget.checked
+                  ? (settings.colorOverride ?? category.color)
+                  : undefined,
+              })
+            }
+          />
           <input
             type={'color'}
-            aria-label={'分类与标签颜色'}
-            value={category.color}
-            onChange={(event) => updateCategoryColor(event.currentTarget.value)}
+            aria-label={'分类标签颜色'}
+            value={settings.colorOverride ?? category.color}
+            disabled={!hasColorOverride}
+            onChange={(event) =>
+              update({ colorOverride: event.currentTarget.value }, 'tag-color')
+            }
           />
         </label>
         <label className={'global-color-row'}>

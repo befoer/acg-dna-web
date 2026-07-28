@@ -1,12 +1,19 @@
 import { createContext, useContext, type Dispatch } from 'react'
 
 import type { EditorAction, EditorState } from './editorReducer'
+import type { LocalImageAsset } from './assets'
+import type { GraphDocument } from '../domain/graph'
 import type { ProjectSummary } from './persistence'
 import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 
 export interface ProjectExport {
   blob: Blob
   fileName: string
+}
+export interface ProjectPreview {
+  document: GraphDocument
+  assets: Record<string, LocalImageAsset>
+  release: () => void
 }
 
 export interface EditorContextValue {
@@ -31,6 +38,7 @@ export interface EditorContextValue {
   createProject: () => Promise<void>
   switchProject: (projectId: string) => Promise<void>
   duplicateProject: () => Promise<void>
+  loadProjectPreview: (projectId: string) => Promise<ProjectPreview | null>
   deleteProject: (projectId: string) => Promise<void>
   importProject: (file: File) => Promise<void>
   exportProject: () => Promise<ProjectExport>

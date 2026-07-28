@@ -4,11 +4,15 @@ import {
   DEFAULT_LABEL_SETTINGS,
   type GraphLabelSettings,
 } from '../domain/graph'
+import { getGraphTemplate } from '../domain/templates'
 import { useEditor } from '../editor/editorContext'
+import { userErrorMessage } from '../errors/userErrorMessage'
 import { registerLocalFont } from '../fonts/fontManager'
 
 interface GlobalLabelSettingsPanelProps {
-  onBack: () => void
+  embedded?: boolean
+  onBack?: () => void
+  backLabel?: string
 }
 
 interface SliderSettingProps {
@@ -51,7 +55,9 @@ function SliderSetting({
 }
 
 export function GlobalLabelSettingsPanel({
+  embedded = false,
   onBack,
+  backLabel = '返回数据编辑',
 }: GlobalLabelSettingsPanelProps) {
   const { state, dispatch } = useEditor()
   const [isLoadingFont, setIsLoadingFont] = useState(false)
@@ -62,6 +68,16 @@ export function GlobalLabelSettingsPanel({
       patch,
       ...(group ? { group } : {}),
       at: new Date().toISOString(),
+    })
+  }
+  const resetToTemplateDefaults = (): void => {
+    const template = getGraphTemplate(state.document.canvas.templateId)
+    update({
+      ...DEFAULT_LABEL_SETTINGS,
+      colorOverride: template.labelColorOverride,
+      textColorOverride: template.labelTextColorOverride,
+      categoryStrokeWidth: template.categoryStrokeWidth,
+      labelStrokeWidth: template.labelStrokeWidth,
     })
   }
 
@@ -112,7 +128,7 @@ export function GlobalLabelSettingsPanel({
     } catch (error) {
       dispatch({
         type: 'status-changed',
-        message: error instanceof Error ? error.message : '本地字体加载失败',
+        message: userErrorMessage(error, '本地字体加载失败'),
       })
     } finally {
       setIsLoadingFont(false)
@@ -120,31 +136,39 @@ export function GlobalLabelSettingsPanel({
   }
 
   return (
-    <div className={'global-label-settings'} aria-label={'全局标签设置'}>
-      <div className={'global-settings-header'}>
-        <button
-          type={'button'}
-          className={'global-settings-back'}
-          aria-label={'返回数据编辑'}
-          onClick={onBack}
-        >
-          ←
-        </button>
+    <div
+      className={'global-label-settings' + (embedded ? ' is-embedded' : '')}
+      aria-label={'全局标签设置'}
+    >
+      <div
+        className={'global-settings-header' + (embedded ? ' is-embedded' : '')}
+      >
+        {!embedded && onBack ? (
+          <button
+            type={'button'}
+            className={'global-settings-back'}
+            aria-label={backLabel}
+            onClick={onBack}
+          >
+            ←
+          </button>
+        ) : null}
         <div>
-          <p className={'section-kicker'}>GLOBAL LABEL STYLE</p>
-          <h2>全局标签设置</h2>
+          <h2>{embedded ? '标签样式' : '全局标签设置'}</h2>
         </div>
         <button
           type={'button'}
           className={'compact-button'}
-          onClick={() => update({ ...DEFAULT_LABEL_SETTINGS })}
+          onClick={resetToTemplateDefaults}
         >
           重置
         </button>
       </div>
-      <p className={'panel-note'}>
-        设置会统一作用于三级标签，并随项目自动保存。关闭图片只影响显示，不会删除本地图片。
-      </p>
+      {!embedded ? (
+        <p className={'panel-note'}>
+          设置会统一作用于三级标签，并随项目自动保存。关闭图片只影响显示，不会删除本地图片。
+        </p>
+      ) : null}
 
       <section className={'global-settings-card'} aria-label={'标签显示'}>
         <h3>显示内容</h3>
@@ -157,10 +181,28 @@ export function GlobalLabelSettingsPanel({
               onClick={() => update({ [option.key]: !option.checked })}
               key={option.key}
             >
-              <span aria-hidden={true}>{option.checked ? '●' : '○'}</span>
               {option.label}
             </button>
           ))}
+          <button
+            type={'button'}
+            className={
+              state.document.canvas.layoutMode === 'gravity' ? 'is-active' : ''
+            }
+            aria-pressed={state.document.canvas.layoutMode === 'gravity'}
+            onClick={() =>
+              dispatch({
+                type: 'layout-mode-changed',
+                mode:
+                  state.document.canvas.layoutMode === 'gravity'
+                    ? 'packing'
+                    : 'gravity',
+                at: new Date().toISOString(),
+              })
+            }
+          >
+            重力碰撞
+          </button>
         </div>
       </section>
 

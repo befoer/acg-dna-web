@@ -172,6 +172,29 @@ describe('local image editor', () => {
     })
   })
 
+  it('can switch from image adjustment back to image search', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    const onSearch = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <LocalImageEditor
+        asset={createAsset()}
+        cropShape={'circle'}
+        title={'调整图片'}
+        onSearch={onSearch}
+        onCancel={vi.fn()}
+        onApply={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByRole('heading', { name: '调整图片' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('LOCAL IMAGE')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '搜索图片' }))
+    expect(onSearch).toHaveBeenCalledOnce()
+  })
+
   it('moves the image by dragging directly on the preview', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     vi.spyOn(

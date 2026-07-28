@@ -15,6 +15,7 @@ import {
   decorationCustomTextLayerId,
   decorationFrameLayerId,
   decorationImageLayerId,
+  decorationPatternLayerId,
   decorationPresetLayerId,
   findGraphNode,
   parseGraphDocument,
@@ -197,6 +198,32 @@ describe('graph document schema', () => {
     ])
   })
 
+  it('round-trips independently ordered pattern textures', () => {
+    const input = createStarterGraph('2026-07-15T00:00:00.000Z')
+    input.decoration.patterns = [
+      {
+        id: 'pattern-one',
+        name: '图案纹理1',
+        ...DEFAULT_DECORATION_PATTERN,
+      },
+      {
+        id: 'pattern-two',
+        name: '图案纹理2',
+        ...DEFAULT_DECORATION_PATTERN,
+        type: 'grid',
+      },
+    ]
+    input.decoration.layerOrder = [
+      decorationPatternLayerId('pattern-two'),
+      DECORATION_DATA_LAYER_ID,
+      decorationPatternLayerId('pattern-one'),
+    ]
+
+    const parsed = parseGraphDocument(JSON.parse(JSON.stringify(input)))
+    expect(parsed.decoration.patterns).toEqual(input.decoration.patterns)
+    expect(parsed.decoration.layerOrder).toEqual(input.decoration.layerOrder)
+  })
+
   it('keeps custom profile text in the shared layer order', () => {
     const input = createStarterGraph('2026-07-15T00:00:00.000Z')
     input.decoration.layerOrder = [DECORATION_DATA_LAYER_ID]
@@ -350,6 +377,7 @@ describe('graph document schema', () => {
       fillFactor: 1.25,
       fontFamily: 'resource-rounded',
       fontWeight: 700,
+      colorOverride: '#2288AA',
       textColorOverride: '#F0F0F0',
       imageMask: 'category',
       imageMaskOpacity: 0.4,
@@ -369,6 +397,7 @@ describe('graph document schema', () => {
       showCategoryText: true,
       fillFactor: 1.25,
       fontFamily: 'resource-rounded',
+      colorOverride: '#2288AA',
       imageMask: 'category',
     })
   })
@@ -383,6 +412,15 @@ describe('graph document schema', () => {
     ).imageMask = 'rainbow'
 
     expect(() => parseGraphDocument(input)).toThrow(/imageMask/)
+
+    const invalidColor = createStarterGraph('2026-07-15T00:00:00.000Z')
+    invalidColor.categories[0]!.appearance = { colorOverride: '#22AA88' }
+    ;(
+      invalidColor.categories[0]!.appearance as unknown as {
+        colorOverride: string
+      }
+    ).colorOverride = 'red'
+    expect(() => parseGraphDocument(invalidColor)).toThrow(/colorOverride/)
   })
 
   it('migrates legacy font choices and validates local font references', () => {

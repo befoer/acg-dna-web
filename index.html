@@ -34,19 +34,65 @@
         >
           <h1>请通过开发服务器打开 ACG DNA Web</h1>
           <p><code>index.html</code> 是 Vite 源码入口，不能直接双击运行。</p>
-          <p>请在仓库根目录打开终端并执行：</p>
-          <code
+          <p>请在仓库根目录打开终端并执行，然后在浏览器打开下方地址。</p>
+          <button
+            type="button"
+            class="copy-code"
+            data-copy="npm start"
+            aria-label="复制启动命令 npm start"
             style="
               display: block;
+              width: 100%;
+              border: 0;
               padding: 14px 16px;
               color: #15d8c5;
+              text-align: left;
               background: #18181b;
+              cursor: pointer;
             "
-            >npm start</code
           >
+            <code>npm start</code>
+          </button>
+          <p style="margin-top: 22px">启动后打开：</p>
+          <button
+            type="button"
+            class="copy-code"
+            data-copy="http://127.0.0.1:5260/"
+            aria-label="复制本地启动地址"
+            style="
+              display: block;
+              width: 100%;
+              border: 0;
+              padding: 14px 16px;
+              color: #15d8c5;
+              text-align: left;
+              background: #18181b;
+              cursor: pointer;
+            "
+          >
+            <code>http://127.0.0.1:5260/</code>
+          </button>
+          <p
+            class="copy-status"
+            aria-live="polite"
+            style="min-height: 20px"
+          ></p>
         </article>
       </main>
     </div>
+    <script>
+      document.querySelectorAll('.copy-code').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const status = document.querySelector('.copy-status')
+          try {
+            await navigator.clipboard.writeText(button.dataset.copy)
+            status.textContent = '已复制到剪贴板'
+          } catch {
+            status.textContent = '请手动复制上方内容'
+          }
+        })
+      })
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

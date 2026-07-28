@@ -34,6 +34,35 @@ export interface ProfileCustomTextRegion extends Rectangle {
   rotation: number
 }
 
+export function isProfileCustomTextResizeHandleHit(
+  region: ProfileCustomTextRegion,
+  x: number,
+  y: number,
+  tolerance: number,
+  padding = 6,
+): boolean {
+  const centerX = region.left + region.width / 2
+  const centerY = region.top + region.height / 2
+  const angle = (-region.rotation * Math.PI) / 180
+  const deltaX = x - centerX
+  const deltaY = y - centerY
+  const localX = centerX + deltaX * Math.cos(angle) - deltaY * Math.sin(angle)
+  const localY = centerY + deltaX * Math.sin(angle) + deltaY * Math.cos(angle)
+  const corners: readonly (readonly [number, number])[] = [
+    [region.left - padding, region.top - padding],
+    [region.left + region.width + padding, region.top - padding],
+    [region.left - padding, region.top + region.height + padding],
+    [
+      region.left + region.width + padding,
+      region.top + region.height + padding,
+    ],
+  ]
+  return corners.some(
+    ([cornerX, cornerY]) =>
+      Math.hypot(localX - cornerX, localY - cornerY) <= tolerance,
+  )
+}
+
 function profileSlotFontFamily(fontName: string | undefined): string {
   if (fontName?.includes('资源圆体')) {
     return (

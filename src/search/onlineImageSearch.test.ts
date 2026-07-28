@@ -55,11 +55,13 @@ describe('online image search', () => {
   })
 
   it('reuses a recent provider response without another API request', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ results: [], queryHints: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ results: [], queryHints: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -81,6 +83,83 @@ describe('online image search', () => {
     await searchOnlineImages('白', 'character')
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes game and singer kinds to the restricted gateway', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ results: [], queryHints: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchOnlineImages('蔚蓝档案', 'game')
+    await searchOnlineImages('宇多田光', 'singer')
+
+    expect(fetchMock.mock.calls[0]?.[0].toString()).toContain('kind=game')
+    expect(fetchMock.mock.calls[1]?.[0].toString()).toContain('kind=singer')
+  })
+
+  it('uses preferred game and singer foreign names as secondary text', async () => {
+    const responses = [
+      {
+        id: '1',
+        name: 'ブルーアーカイブ',
+        alternateName: '蔚蓝档案',
+        foreignName: 'Blue Archive',
+        thumbnailUrl: 'https://gateway.example/game.jpg',
+        downloadUrl: 'https://gateway.example/game.jpg',
+        originalUrl: 'https://lain.bgm.tv/pic/cover/l/game.jpg',
+        sourceUrl: 'https://bgm.tv/subject/1',
+      },
+      {
+        id: '2',
+        name: '宇多田ヒカル',
+        alternateName: '宇多田光',
+        foreignName: '宇多田ヒカル',
+        thumbnailUrl: 'https://gateway.example/singer.jpg',
+        downloadUrl: 'https://gateway.example/singer.jpg',
+        originalUrl: 'https://lain.bgm.tv/pic/crt/l/singer.jpg',
+        sourceUrl: 'https://bgm.tv/person/2',
+      },
+    ]
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ results: [responses.shift()], queryHints: [] }),
+            { status: 200 },
+          ),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const game = await searchOnlineImages('蔚蓝档案', 'game')
+    const singer = await searchOnlineImages('宇多田光', 'singer')
+
+    expect(game.results[0]).toMatchObject({
+      name: '蔚蓝档案',
+      alternateName: 'Blue Archive',
+    })
+    expect(singer.results[0]).toMatchObject({
+      name: '宇多田光',
+      alternateName: '宇多田ヒカル',
+    })
+  })
+
+  it('converts browser fetch failures to a Chinese provider error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+    )
+
+    await expect(searchOnlineImages('小叽', 'character')).rejects.toThrow(
+      '无法连接 Bangumi 搜索服务，请检查网络后重试',
+    )
   })
 
   it('filters unrelated AniList popularity results for unsupported Chinese queries', async () => {

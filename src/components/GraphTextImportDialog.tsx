@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { GraphCategory } from '../domain/graph'
 import {
@@ -10,24 +10,50 @@ import {
 interface GraphTextImportDialogProps {
   onClose: () => void
   onImport: (categories: GraphCategory[], mode: 'replace' | 'append') => void
+  flatTargets: GraphTextFlatTarget[]
+  onImportFlat: (target: GraphTextFlatTarget, names: string[]) => void
 }
 
-const EXAMPLE_TEXT = [
-  '分类：动画偏好',
-  '  属性：叙事氛围',
-  '    子属性：世界观',
-  '    子属性：情绪余韵',
-  '  属性：作画表现',
-].join('\n')
+export interface GraphTextFlatTarget {
+  id: string
+  kind: 'category' | 'attribute'
+  label: string
+}
+
+function parseFlatNames(value: string): string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const part of value.split(/[\n、，,；;/\\]+/)) {
+    const name = part.trim().slice(0, 40)
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
+    if (names.length >= 50) break
+  }
+  return names
+}
+
+function isStructuredText(value: string): boolean {
+  return /(?:^\s*(?:分类|属性|子属性)\s*[：:]|[├└]─|^\s+[-*]\s+|^\s*#{1,2}\s+)/m.test(
+    value,
+  )
+}
 
 export function GraphTextImportDialog({
   onClose,
   onImport,
+  flatTargets,
+  onImportFlat,
 }: GraphTextImportDialogProps) {
   const [mode, setMode] = useState<'replace' | 'append'>('append')
   const [text, setText] = useState('')
-  const [message, setMessage] = useState('')
+  const [flatTargetId, setFlatTargetId] = useState(
+    () => flatTargets[0]?.id ?? '',
+  )
+  const isFlatInput = Boolean(text.trim()) && !isStructuredText(text)
+  const flatNames = useMemo(() => parseFlatNames(text), [text])
   const parsed = useMemo(() => {
+    if (isFlatInput) return { categories: null, error: '' }
     if (!text.trim()) return { categories: null, error: '' }
     try {
       return {
@@ -40,10 +66,12 @@ export function GraphTextImportDialog({
         error: error instanceof GraphTextError ? error.message : '文本解析失败',
       }
     }
-  }, [text])
+  }, [isFlatInput, text])
   const summary = parsed.categories
     ? summarizeGraphCategories(parsed.categories)
     : null
+  const flatTarget =
+    flatTargets.find((target) => target.id === flatTargetId) ?? null
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -52,27 +80,6 @@ export function GraphTextImportDialog({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
-
-  const loadFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0]
-    event.currentTarget.value = ''
-    if (!file) return
-    if (file.size > 1_000_000) {
-      setMessage('TXT 文件不能超过 1 MB')
-      return
-    }
-    setText(await file.text())
-    setMessage('已读取 ' + file.name)
-  }
-
-  const paste = async () => {
-    try {
-      setText(await navigator.clipboard.readText())
-      setMessage('已从剪贴板粘贴')
-    } catch {
-      setMessage('无法读取剪贴板，请手动粘贴')
-    }
-  }
 
   return (
     <div
@@ -90,8 +97,7 @@ export function GraphTextImportDialog({
       >
         <div className={'node-create-heading'}>
           <div>
-            <p className={'section-kicker'}>LOCAL IMPORT</p>
-            <h2 id={'graph-text-import-title'}>导入文字结构</h2>
+            <h2 id={'graph-text-import-title'}>导入属性</h2>
           </div>
           <button
             type={'button'}
@@ -102,84 +108,76 @@ export function GraphTextImportDialog({
             ×
           </button>
         </div>
-        <div className={'node-create-tabs'} role={'tablist'}>
-          <button
-            type={'button'}
-            role={'tab'}
-            aria-selected={mode === 'append'}
-            className={mode === 'append' ? 'is-active' : ''}
-            onClick={() => setMode('append')}
-          >
-            追加到当前数据
-          </button>
-          <button
-            type={'button'}
-            role={'tab'}
-            aria-selected={mode === 'replace'}
-            className={mode === 'replace' ? 'is-active' : ''}
-            onClick={() => setMode('replace')}
-          >
-            替换当前数据
-          </button>
-        </div>
-        <div className={'graph-text-import-tools'}>
-          <button
-            type={'button'}
-            className={'secondary-button'}
-            onClick={paste}
-          >
-            从剪贴板粘贴
-          </button>
-          <label className={'file-button'}>
-            读取 TXT
-            <input
-              type={'file'}
-              accept={'.txt,text/plain'}
-              onChange={(event) => void loadFile(event)}
-            />
-          </label>
-          <button
-            type={'button'}
-            className={'ghost-button'}
-            onClick={() => setText(EXAMPLE_TEXT)}
-          >
-            填入示例
-          </button>
-        </div>
+        {!isFlatInput ? (
+          <div className={'node-create-tabs'} role={'tablist'}>
+            <button
+              type={'button'}
+              role={'tab'}
+              aria-selected={mode === 'append'}
+              className={mode === 'append' ? 'is-active' : ''}
+              onClick={() => setMode('append')}
+            >
+              追加到当前数据
+            </button>
+            <button
+              type={'button'}
+              role={'tab'}
+              aria-selected={mode === 'replace'}
+              className={mode === 'replace' ? 'is-active' : ''}
+              onClick={() => setMode('replace')}
+            >
+              替换当前数据
+            </button>
+          </div>
+        ) : null}
         <textarea
           className={'graph-text-input'}
           aria-label={'待导入三级结构'}
           value={text}
-          placeholder={EXAMPLE_TEXT}
-          onChange={(event) => {
-            setText(event.currentTarget.value)
-            setMessage('')
-          }}
+          placeholder={'每行或按分隔符输入多个属性'}
+          onChange={(event) => setText(event.currentTarget.value)}
         />
-        <div
-          className={'graph-text-summary' + (parsed.error ? ' is-error' : '')}
-          role={'status'}
-        >
-          {parsed.error ? (
-            parsed.error
-          ) : summary ? (
-            <>
-              识别到 <strong>{summary.categories}</strong> 个分类、
-              <strong>{summary.attributes}</strong> 个属性、
-              <strong>{summary.children}</strong> 个子属性
-            </>
-          ) : (
-            '支持 APP 树形文本，或“分类：/属性：/子属性：”三级格式。'
-          )}
-        </div>
+        {isFlatInput ? (
+          <label className={'graph-text-flat-target'}>
+            <span>添加到</span>
+            <select
+              aria-label={'选择添加位置'}
+              value={flatTargetId}
+              onChange={(event) => setFlatTargetId(event.currentTarget.value)}
+            >
+              {flatTargets.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {parsed.error || summary || isFlatInput ? (
+          <div
+            className={'graph-text-summary' + (parsed.error ? ' is-error' : '')}
+            role={'status'}
+          >
+            {parsed.error ? (
+              parsed.error
+            ) : isFlatInput ? (
+              <>
+                识别到 <strong>{flatNames.length}</strong> 个属性
+              </>
+            ) : summary ? (
+              <>
+                识别到 <strong>{summary.categories}</strong> 个一级属性、
+                <strong>{summary.attributes}</strong> 个二级属性、
+                <strong>{summary.children}</strong> 个三级属性
+              </>
+            ) : null}
+          </div>
+        ) : null}
         {mode === 'replace' ? (
           <p className={'graph-text-warning'}>
             替换会删除当前全部分类及其节点图片，但可通过撤销恢复。
           </p>
         ) : null}
-        <div className={'graph-text-message'} aria-live={'polite'}>
-          {message}
-        </div>
         <div className={'graph-text-actions'}>
           <button
             type={'button'}
@@ -191,12 +189,24 @@ export function GraphTextImportDialog({
           <button
             type={'button'}
             className={'primary-button'}
-            disabled={!parsed.categories}
+            disabled={
+              isFlatInput
+                ? flatNames.length === 0 || !flatTarget
+                : !parsed.categories
+            }
             onClick={() => {
+              if (isFlatInput && flatTarget) {
+                onImportFlat(flatTarget, flatNames)
+                return
+              }
               if (parsed.categories) onImport(parsed.categories, mode)
             }}
           >
-            {mode === 'replace' ? '确认替换' : '确认追加'}
+            {isFlatInput
+              ? '确认添加'
+              : mode === 'replace'
+                ? '确认替换'
+                : '确认追加'}
           </button>
         </div>
       </section>

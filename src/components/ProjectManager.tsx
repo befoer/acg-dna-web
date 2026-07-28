@@ -6,6 +6,8 @@ import {
   type MouseEvent,
 } from 'react'
 
+import projectIcon from '../assets/editor-project.svg'
+import { createGraphThumbnailDataUrl } from '../canvas/renderGraph'
 import { useEditor } from '../editor/editorContext'
 import {
   formatStorageBytes,
@@ -36,6 +38,18 @@ function projectTime(value: string): string {
   }).format(date)
 }
 
+function ProjectGraphThumbnail({ src }: { src?: string }) {
+  return (
+    <span className="project-graph-thumbnail" aria-hidden="true">
+      {src ? (
+        <img src={src} alt="" />
+      ) : (
+        <span className="project-thumbnail-loading" />
+      )}
+    </span>
+  )
+}
+
 export function ProjectManager() {
   const {
     state,
@@ -45,6 +59,7 @@ export function ProjectManager() {
     createProject,
     switchProject,
     duplicateProject,
+    loadProjectPreview,
     deleteProject,
     importProject,
     exportProject,
@@ -53,6 +68,9 @@ export function ProjectManager() {
   const [exporting, setExporting] = useState(false)
   const [storageEstimate, setStorageEstimate] =
     useState<BrowserStorageEstimate | null>(null)
+  const [projectPreviews, setProjectPreviews] = useState<
+    Record<string, string>
+  >({})
   const containerRef = useRef<HTMLDivElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const storageAvailable = state.persistence.status !== 'unavailable'
@@ -72,6 +90,41 @@ export function ProjectManager() {
       cancelled = true
     }
   }, [open, state.persistence.lastSavedAt])
+
+  useEffect(() => {
+    if (!open || projects.length === 0) return
+    let cancelled = false
+    void (async () => {
+      const results = await Promise.all(
+        projects.map(async (project) => {
+          const preview = await loadProjectPreview(project.id)
+          if (!preview) return { id: project.id, src: null }
+          try {
+            return {
+              id: project.id,
+              src: await createGraphThumbnailDataUrl(
+                preview.document,
+                preview.assets,
+              ),
+            }
+          } catch {
+            return { id: project.id, src: null }
+          } finally {
+            preview.release()
+          }
+        }),
+      )
+      if (cancelled) return
+      const previews: Record<string, string> = {}
+      results.forEach(({ id, src }) => {
+        if (src) previews[id] = src
+      })
+      setProjectPreviews(previews)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadProjectPreview, open, projects])
 
   useEffect(() => {
     if (!open) return
@@ -135,6 +188,12 @@ export function ProjectManager() {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
+        <img
+          className="project-manager-trigger-icon"
+          src={projectIcon}
+          alt=""
+          aria-hidden={true}
+        />
         <span aria-hidden={true}>▦</span>
         <span className={'project-manager-trigger-label'}>项目</span>
       </button>
@@ -148,6 +207,12 @@ export function ProjectManager() {
           <div className={'project-popover-header'}>
             <div>
               <strong>本地项目</strong>
+              <small className="project-popover-summary">
+                {projects.length} 个项目
+                {storageEstimate
+                  ? ' · 已使用 ' + formatStorageBytes(storageEstimate.usage)
+                  : ''}
+              </small>
               <small>{projects.length} 个项目 · 自动保存</small>
             </div>
             <button
@@ -177,6 +242,7 @@ export function ProjectManager() {
                     disabled={projectActionPending}
                     onClick={() => void switchProject(project.id)}
                   >
+                    <ProjectGraphThumbnail src={projectPreviews[project.id]} />
                     <span className={'project-list-mark'} aria-hidden={true}>
                       {active ? '●' : '○'}
                     </span>
@@ -201,6 +267,8 @@ export function ProjectManager() {
             </button>
             <button
               type={'button'}
+              aria-hidden={true}
+              tabIndex={-1}
               disabled={!storageAvailable || projectActionPending}
               onClick={() => void duplicateProject()}
             >
@@ -236,16 +304,25 @@ export function ProjectManager() {
             accept={'.json,application/json'}
             onChange={(event) => void handleImport(event)}
           />
+          <div className={'project-secondary-actions'}>
+            <button
+              type={'button'}
+              className={'project-duplicate-button'}
+              disabled={!storageAvailable || projectActionPending}
+              onClick={() => void duplicateProject()}
+            >
+              ⧉ 复制
+            </button>
 
-          <button
-            type={'button'}
-            className={'project-delete-button'}
-            disabled={!storageAvailable || projectActionPending}
-            onClick={(event) => void handleDelete(event)}
-          >
-            删除当前项目
-          </button>
-          <p className={'project-popover-note'}>项目名称可直接在顶栏编辑。</p>
+            <button
+              type={'button'}
+              className={'project-delete-button'}
+              disabled={!storageAvailable || projectActionPending}
+              onClick={(event) => void handleDelete(event)}
+            >
+              删除当前项目
+            </button>
+          </div>
         </section>
       ) : null}
     </div>
