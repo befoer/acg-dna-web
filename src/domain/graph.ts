@@ -489,7 +489,7 @@ export function createStarterGraph(
     canvas: {
       width: 1380,
       height: 2000,
-      backgroundColor: '#F6F2EC',
+      backgroundColor: '#F2F2F2',
       layoutMode: 'gravity',
       templateId: 'custom',
       contentBounds: { ...DEFAULT_CONTENT_BOUNDS },

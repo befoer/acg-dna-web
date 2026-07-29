@@ -39,6 +39,25 @@ function assertSiblingsDoNotOverlap(nodes: LayoutNode[]): void {
   }
 }
 
+function assertSiblingsAreStrictlySeparated(nodes: LayoutNode[]): void {
+  for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+    const left = nodes[leftIndex]
+    if (!left) continue
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < nodes.length;
+      rightIndex += 1
+    ) {
+      const right = nodes[rightIndex]
+      if (!right) continue
+      expect(
+        Math.hypot(right.x - left.x, right.y - left.y) + 0.001,
+      ).toBeGreaterThanOrEqual(left.radius + right.radius)
+    }
+    assertSiblingsAreStrictlySeparated(left.children)
+  }
+}
+
 function childAreaRatio(parent: LayoutNode): number {
   return (
     parent.children.reduce(
@@ -83,7 +102,7 @@ function assertChildrenFormContactCluster(nodes: LayoutNode[]): void {
             const surfaceGap =
               Math.hypot(right.x - left.x, right.y - left.y) -
               (left.radius + right.radius)
-            if (surfaceGap <= 0.5) {
+            if (surfaceGap <= 3) {
               connected.add(rightIndex)
               addedNode = true
             }
@@ -115,7 +134,7 @@ function assertNodesFormContactCluster(nodes: LayoutNode[]): void {
         const surfaceGap =
           Math.hypot(right.x - left.x, right.y - left.y) -
           (left.radius + right.radius)
-        if (surfaceGap <= 0.5) {
+        if (surfaceGap <= 3) {
           connected.add(rightIndex)
           addedNode = true
         }
@@ -273,7 +292,7 @@ describe('deterministic gravity layout', () => {
           Math.hypot(right.x - left.x, right.y - left.y) -
             (left.radius + right.radius),
         ),
-      ).toBeLessThanOrEqual(0.5)
+      ).toBeLessThanOrEqual(1.5)
     }
 
     expectTouching('attribute-story', 'attribute-visual')
@@ -352,6 +371,61 @@ describe('deterministic gravity layout', () => {
     assertSiblingsDoNotOverlap([parent])
   })
 
+  it('separates dense image attribute groups for every deterministic seed', () => {
+    const values = [100, 96, 92, 86, 80, 72, 64, 56, 48, 40, 32, 24]
+
+    for (let seed = 0; seed < 16; seed += 1) {
+      const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+      document.id = `dense-image-attributes-${seed}`
+      const category = document.categories[0]!
+      category.attributes = values.map((value, index) => ({
+        id: `dense-attribute-${index}`,
+        name: `图片属性 ${index + 1}`,
+        value,
+        hidden: false,
+        imageAssetId: `image-${index}`,
+        children: [],
+      }))
+      document.categories = [category]
+
+      const parent = createGravityLayout(document).roots[0]!
+      expect(childAreaRatio(parent)).toBeGreaterThanOrEqual(0.67)
+      assertSiblingsAreStrictlySeparated([parent])
+      assertChildrenContained([parent])
+    }
+  })
+
+  it('separates dense third-level groups for every deterministic seed', () => {
+    const values = [100, 94, 88, 80, 72, 64, 56, 48, 40, 32, 24, 16]
+
+    for (let seed = 0; seed < 8; seed += 1) {
+      const document = createStarterGraph('2026-07-15T00:00:00.000Z')
+      document.id = `dense-third-level-${seed}`
+      const category = document.categories[0]!
+      category.attributes = [
+        {
+          id: 'dense-parent-attribute',
+          name: '父级图片属性',
+          value: 100,
+          hidden: false,
+          children: values.map((value, index) => ({
+            id: `dense-child-${index}`,
+            name: `子标签 ${index + 1}`,
+            value,
+            hidden: false,
+            imageAssetId: `image-${index}`,
+          })),
+        },
+      ]
+      document.categories = [category]
+
+      const attribute = createGravityLayout(document).roots[0]!.children[0]!
+      expect(childAreaRatio(attribute)).toBeGreaterThanOrEqual(0.67)
+      assertSiblingsAreStrictlySeparated([attribute])
+      assertChildrenContained([attribute])
+    }
+  })
+
   it('preserves a stronger APP-style size contrast between child weights', () => {
     const document = createStarterGraph('2026-07-15T00:00:00.000Z')
     const category = document.categories[0]!
@@ -394,7 +468,7 @@ describe('deterministic gravity layout', () => {
     assertSiblingsDoNotOverlap([parent])
   })
 
-  it('forms a zero-gap contact cluster for crowded descendants', () => {
+  it('forms a 1px-gap contact cluster for crowded descendants', () => {
     const document = createStarterGraph('2026-07-15T00:00:00.000Z')
     const category = document.categories[0]!
     category.attributes[0]!.children.push(

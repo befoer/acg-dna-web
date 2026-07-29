@@ -232,7 +232,7 @@ export function LocalImageEditor({
       context.rect(inset, inset, cropWidth, cropHeight)
     }
     context.lineWidth = 3
-    context.strokeStyle = '#15B8A6'
+    context.strokeStyle = cropShape === 'circle' ? '#111216' : '#15B8A6'
     context.stroke()
   }, [asset.image, cropShape, previewAspectRatio, transform])
 
@@ -328,7 +328,7 @@ export function LocalImageEditor({
             ) : null}
             <button
               type={'button'}
-              className={'profile-icon-button'}
+              className={'dialog-close-button'}
               aria-label={'关闭图片编辑器'}
               onClick={onCancel}
             >
@@ -470,7 +470,7 @@ export function LocalImageEditor({
         <div className={'image-editor-actions'}>
           <button
             type={'button'}
-            className={'ghost-button'}
+            className={'ghost-button is-rectangular-control'}
             onClick={() => commitTransform({ ...defaultTransform })}
           >
             重置

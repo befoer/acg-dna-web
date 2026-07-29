@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -22,6 +22,7 @@ vi.mock('../search/onlineImageSearch', async () => {
 
 describe('ImageSearchDialog', () => {
   afterEach(() => {
+    vi.useRealTimers()
     searchMock.mockReset()
     workSearchMock.mockReset()
     workCharactersMock.mockReset()
@@ -89,7 +90,7 @@ describe('ImageSearchDialog', () => {
     ).toEqual(['改用 AniList 搜索', '搜日文', '按作品查找角色'])
 
     fireEvent.click(screen.getByRole('button', { name: '按作品查找角色' }))
-    const input = screen.getByPlaceholderText('输入动画、游戏或漫画名称')
+    const input = screen.getByPlaceholderText('搜索动画、游戏或漫画')
     fireEvent.change(input, { target: { value: '孤独摇滚' } })
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     await screen.findByText('找到 1 个作品，选择一个作品后显示该作品的角色。')
@@ -99,7 +100,7 @@ describe('ImageSearchDialog', () => {
     expect(screen.getByText('找到 1 个 Bangumi 结果。')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '按作品查找角色' }))
-    const secondInput = screen.getByPlaceholderText('输入动画、游戏或漫画名称')
+    const secondInput = screen.getByPlaceholderText('搜索动画、游戏或漫画')
     fireEvent.change(secondInput, { target: { value: '孤独摇滚' } })
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     await screen.findByText('找到 1 个作品，选择一个作品后显示该作品的角色。')
@@ -128,6 +129,28 @@ describe('ImageSearchDialog', () => {
     )
   })
 
+  it('offers AniList when a Bangumi search takes longer than ten seconds', () => {
+    vi.useFakeTimers()
+    searchMock.mockImplementation(() => new Promise(() => undefined))
+    render(
+      <ImageSearchDialog
+        initialQuery="后藤一里"
+        onClose={() => undefined}
+        onSelect={async () => true}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    act(() => {
+      vi.advanceTimersByTime(10_000)
+    })
+
+    expect(screen.getByText('Bangumi 搜索较慢')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '使用 AniList 搜索' }),
+    ).toBeInTheDocument()
+  })
+
   it('offers custom content and searches games through Bangumi only', async () => {
     searchMock.mockResolvedValue({ provider: 'bangumi', results: [] })
     const onCustomize = vi.fn()
@@ -144,7 +167,7 @@ describe('ImageSearchDialog', () => {
     expect(onCustomize).toHaveBeenCalledOnce()
 
     fireEvent.click(screen.getByRole('button', { name: '游戏' }))
-    expect(screen.getByPlaceholderText('输入游戏名称')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('搜索游戏')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: '改用 AniList 搜索' }),
     ).not.toBeInTheDocument()

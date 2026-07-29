@@ -20,6 +20,7 @@ import {
 interface ImageSearchDialogProps {
   cacheKey?: string
   initialQuery: string
+  initialKind?: OnlineImageKind
   onClose: () => void
   onSelect: (result: OnlineImageSearchResult) => Promise<boolean>
   onCustomize?: () => void
@@ -53,6 +54,7 @@ const imageSearchHistory: string[] = []
 const MAX_IMAGE_SEARCH_SESSIONS = 200
 const RESULT_BATCH_SIZE = 6
 const MAX_IMAGE_SEARCH_HISTORY = 6
+const BANGUMI_FALLBACK_NOTICE_DELAY_MS = 10_000
 const ANILIST_KINDS = new Set<OnlineImageKind>(['character', 'anime'])
 
 const KIND_COPY: Record<
@@ -61,22 +63,22 @@ const KIND_COPY: Record<
 > = {
   character: {
     label: '角色',
-    placeholder: '输入角色名称',
+    placeholder: '搜索角色',
     switched: '已切换到角色搜索。',
   },
   anime: {
     label: '动画',
-    placeholder: '输入动画名称',
+    placeholder: '搜索动画',
     switched: '已切换到动画搜索。',
   },
   game: {
     label: '游戏',
-    placeholder: '输入游戏名称',
+    placeholder: '搜索游戏',
     switched: '已切换到游戏搜索。',
   },
   singer: {
     label: '歌手',
-    placeholder: '输入歌手名称',
+    placeholder: '搜索歌手',
     switched: '已切换到歌手搜索。',
   },
 }
@@ -89,14 +91,19 @@ export function resetImageSearchHistoryForTests(): void {
 export function ImageSearchDialog({
   cacheKey,
   initialQuery,
+  initialKind,
   onClose,
   onSelect,
   onCustomize,
 }: ImageSearchDialogProps) {
   const previousSession = cacheKey ? imageSearchSessions.get(cacheKey) : null
-  const [query, setQuery] = useState(previousSession?.query ?? initialQuery)
+  const isAddSearch =
+    cacheKey?.startsWith('tree-add-') || cacheKey?.startsWith('canvas-child-')
+  const [query, setQuery] = useState(
+    previousSession?.query ?? (isAddSearch ? '' : initialQuery),
+  )
   const [kind, setKind] = useState<OnlineImageKind>(
-    previousSession?.kind ?? 'character',
+    previousSession?.kind ?? initialKind ?? 'character',
   )
   const [provider, setProvider] = useState<OnlineImageProvider>(
     previousSession?.provider ?? 'bangumi',
@@ -127,6 +134,8 @@ export function ImageSearchDialog({
     CharacterSearchReturnState | undefined
   >(previousSession?.characterReturnState)
   const [searching, setSearching] = useState(false)
+  const [showAniListFallbackNotice, setShowAniListFallbackNotice] =
+    useState(false)
   const [selectingId, setSelectingId] = useState<string | null>(null)
   const [searchHistory, setSearchHistory] = useState(() => [
     ...imageSearchHistory,
@@ -196,7 +205,15 @@ export function ImageSearchDialog({
     setResults([])
     setVisibleResultCount(RESULT_BATCH_SIZE)
     setSearching(true)
+    setShowAniListFallbackNotice(false)
     setMessage(`正在搜索 ${providerLabel}…`)
+    const fallbackNoticeTimer =
+      nextProvider === 'bangumi' && ANILIST_KINDS.has(kind)
+        ? window.setTimeout(
+            () => setShowAniListFallbackNotice(true),
+            BANGUMI_FALLBACK_NOTICE_DELAY_MS,
+          )
+        : undefined
     try {
       const response = await searchOnlineImages(normalized, kind, {
         provider: nextProvider,
@@ -263,6 +280,9 @@ export function ImageSearchDialog({
         workResults: [],
       })
     } finally {
+      if (fallbackNoticeTimer !== undefined) {
+        window.clearTimeout(fallbackNoticeTimer)
+      }
       if (!controller.signal.aborted) setSearching(false)
     }
   }
@@ -499,7 +519,7 @@ export function ImageSearchDialog({
   }
 
   return (
-    <div className="dialog-backdrop" role="presentation">
+    <div className="dialog-backdrop image-search-backdrop" role="presentation">
       <section
         className="dialog-card image-search-dialog"
         role="dialog"
@@ -510,8 +530,13 @@ export function ImageSearchDialog({
           <div>
             <h2 id="image-search-title">搜索图片</h2>
           </div>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            关闭
+          <button
+            type="button"
+            className="dialog-close-button"
+            aria-label="关闭搜索图片"
+            onClick={onClose}
+          >
+            ×
           </button>
         </header>
 
@@ -539,21 +564,28 @@ export function ImageSearchDialog({
         </div>
 
         <form className="image-search-form" onSubmit={submit}>
-          <input
-            className="text-input"
-            value={query}
-            maxLength={80}
-            autoFocus
-            placeholder={
-              searchMode === 'images'
-                ? KIND_COPY[kind].placeholder
-                : '输入动画、游戏或漫画名称'
-            }
-            onChange={(event) => updateQuery(event.currentTarget.value)}
-          />
-          <button className="primary-button" type="submit" disabled={searching}>
-            {searching ? '搜索中…' : '搜索'}
-          </button>
+          <div className="image-search-input-wrap">
+            <input
+              className="text-input"
+              value={query}
+              maxLength={80}
+              autoFocus
+              placeholder={
+                searchMode === 'images'
+                  ? KIND_COPY[kind].placeholder
+                  : '搜索动画、游戏或漫画'
+              }
+              onChange={(event) => updateQuery(event.currentTarget.value)}
+            />
+            <button
+              className="image-search-submit"
+              type="submit"
+              aria-label="搜索"
+              disabled={searching}
+            >
+              <span className="image-search-submit-icon" aria-hidden="true" />
+            </button>
+          </div>
         </form>
 
         {searchHistory.length > 0 ? (
@@ -582,6 +614,14 @@ export function ImageSearchDialog({
         <div className="image-search-status">
           <div className="image-search-status-copy">
             <span>{message}</span>
+            {searching && showAniListFallbackNotice ? (
+              <div className="image-search-hints">
+                <span>Bangumi 搜索较慢</span>
+                <button type="button" onClick={() => void runSearch('anilist')}>
+                  使用 AniList 搜索
+                </button>
+              </div>
+            ) : null}
             {!searching &&
             query.trim() &&
             searchMode === 'images' &&
@@ -752,7 +792,7 @@ export function ImageSearchDialog({
         </div>
 
         <p className="image-rights-note">
-          图片版权归原权利人所有。仅在你确认有权使用时选择；图片会保存到本机浏览器，不会上传到项目服务器。
+          图片版权归原权利人所有；图片只会保存到本机浏览器。
         </p>
       </section>
     </div>

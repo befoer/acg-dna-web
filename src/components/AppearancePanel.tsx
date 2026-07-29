@@ -28,6 +28,7 @@ import {
 import { useEditor } from '../editor/editorContext'
 import { ContentBoundsPanel } from './ContentBoundsPanel'
 import { GlobalLabelSettingsPanel } from './GlobalLabelSettingsPanel'
+import { HexColorField } from './HexColorField'
 import eyeIconUrl from '../assets/eye.svg'
 
 const CANVAS_PRESETS = [
@@ -850,30 +851,30 @@ export function AppearancePanel({
                 </label>
               ) : null}
               <div className={'decoration-color-row'}>
-                <label>
+                <div className={'decoration-color-entry'}>
                   <span>背景颜色</span>
-                  <input
-                    type={'color'}
+                  <HexColorField
+                    ariaLabel={'图案背景颜色'}
                     value={selectedPattern.backgroundColor}
-                    onChange={(event) =>
+                    onChange={(backgroundColor) =>
                       updateSelectedPattern({
-                        backgroundColor: event.currentTarget.value,
+                        backgroundColor,
                       })
                     }
                   />
-                </label>
-                <label>
+                </div>
+                <div className={'decoration-color-entry'}>
                   <span>图案颜色</span>
-                  <input
-                    type={'color'}
+                  <HexColorField
+                    ariaLabel={'图案颜色'}
                     value={selectedPattern.foregroundColor}
-                    onChange={(event) =>
+                    onChange={(foregroundColor) =>
                       updateSelectedPattern({
-                        foregroundColor: event.currentTarget.value,
+                        foregroundColor,
                       })
                     }
                   />
-                </label>
+                </div>
               </div>
               <button
                 type={'button'}
@@ -951,30 +952,30 @@ export function AppearancePanel({
                 )
               })}
               <div className={'decoration-color-row'}>
-                <label>
+                <div className={'decoration-color-entry'}>
                   <span>填充颜色</span>
-                  <input
-                    type={'color'}
+                  <HexColorField
+                    ariaLabel={'矩形填充颜色'}
                     value={selectedFrame.fillColor}
-                    onChange={(event) =>
+                    onChange={(fillColor) =>
                       updateSelectedFrame({
-                        fillColor: event.currentTarget.value,
+                        fillColor,
                       })
                     }
                   />
-                </label>
-                <label>
+                </div>
+                <div className={'decoration-color-entry'}>
                   <span>描边颜色</span>
-                  <input
-                    type={'color'}
+                  <HexColorField
+                    ariaLabel={'矩形描边颜色'}
                     value={selectedFrame.strokeColor}
-                    onChange={(event) =>
+                    onChange={(strokeColor) =>
                       updateSelectedFrame({
-                        strokeColor: event.currentTarget.value,
+                        strokeColor,
                       })
                     }
                   />
-                </label>
+                </div>
               </div>
               <button
                 type={'button'}
@@ -1262,7 +1263,10 @@ export function AppearancePanel({
                 defaultValue={canvas.height}
               />
             </label>
-            <button type={'submit'} className={'compact-button'}>
+            <button
+              type={'submit'}
+              className={'compact-button is-rectangular-control'}
+            >
               应用
             </button>
           </form>
@@ -1299,20 +1303,18 @@ export function AppearancePanel({
               <strong>背景颜色</strong>
               <small>{canvas.backgroundColor.toUpperCase()}</small>
             </div>
-            <label className={'appearance-color-picker'}>
-              <span className={'sr-only'}>自定义背景颜色</span>
-              <input
-                type={'color'}
-                value={canvas.backgroundColor}
-                onChange={(event) =>
-                  dispatch({
-                    type: 'background-changed',
-                    color: event.currentTarget.value,
-                    at: timestamp(),
-                  })
-                }
-              />
-            </label>
+            <HexColorField
+              className={'appearance-color-picker'}
+              ariaLabel={'自定义背景颜色'}
+              value={canvas.backgroundColor}
+              onChange={(color) =>
+                dispatch({
+                  type: 'background-changed',
+                  color,
+                  at: timestamp(),
+                })
+              }
+            />
           </div>
         </section>
       ) : null}

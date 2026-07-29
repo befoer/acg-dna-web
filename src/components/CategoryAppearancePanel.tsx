@@ -6,6 +6,7 @@ import type {
 } from '../domain/graph'
 import { findGraphNode, resolveCategoryAppearance } from '../domain/graph'
 import { useEditor } from '../editor/editorContext'
+import { HexColorField } from './HexColorField'
 
 interface CategoryAppearancePanelProps {
   categoryId: string
@@ -250,7 +251,7 @@ export function CategoryAppearancePanel({
 
       <section className={'global-settings-card'}>
         <h3>颜色</h3>
-        <label className={'global-color-row'}>
+        <div className={'global-color-row'}>
           <span>
             <strong>分类统一标签颜色</strong>
             <small>仅影响当前一级标签及其内部标签</small>
@@ -267,17 +268,14 @@ export function CategoryAppearancePanel({
               })
             }
           />
-          <input
-            type={'color'}
-            aria-label={'分类标签颜色'}
+          <HexColorField
+            ariaLabel={'分类标签颜色'}
             value={settings.colorOverride ?? category.color}
             disabled={!hasColorOverride}
-            onChange={(event) =>
-              update({ colorOverride: event.currentTarget.value }, 'tag-color')
-            }
+            onChange={(colorOverride) => update({ colorOverride }, 'tag-color')}
           />
-        </label>
-        <label className={'global-color-row'}>
+        </div>
+        <div className={'global-color-row'}>
           <span>
             <strong>独立文字颜色</strong>
             <small>关闭后跟随全局或自动选择</small>
@@ -294,19 +292,15 @@ export function CategoryAppearancePanel({
               })
             }
           />
-          <input
-            type={'color'}
-            aria-label={'分类文字颜色'}
+          <HexColorField
+            ariaLabel={'分类文字颜色'}
             value={settings.textColorOverride ?? '#242429'}
             disabled={category.appearance?.textColorOverride === undefined}
-            onChange={(event) =>
-              update(
-                { textColorOverride: event.currentTarget.value },
-                'text-color',
-              )
+            onChange={(textColorOverride) =>
+              update({ textColorOverride }, 'text-color')
             }
           />
-        </label>
+        </div>
       </section>
 
       <section className={'global-settings-card'}>

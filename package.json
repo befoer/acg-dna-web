@@ -7,6 +7,7 @@
     "dev": "vite",
     "start": "vite --host 127.0.0.1 --port 5260 --open",
     "build": "tsc -b && vite build",
+    "build:main-site": "tsc -b && vite build --outDir ../acgdna_main/editor --emptyOutDir",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",

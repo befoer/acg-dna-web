@@ -58,6 +58,7 @@ const TAU = Math.PI * 2
 const ANGLE_STEPS = 48
 const EPSILON = 0.0001
 const FLAT_MODE_ITEM_VALUE_EXPONENT = 1.35
+const SIBLING_GAP_INCREMENT = 1
 
 function compareIds(left: string, right: string): number {
   if (left === right) return 0
@@ -260,7 +261,7 @@ function buildAttribute(
     .filter((child) => !child.hidden)
     .sort(compareByValueThenId)
     .map((child) => buildSubAttribute(child, color, categoryId))
-  const contentRadius = packSiblings(children, 9)
+  const contentRadius = packSiblings(children, 9 + SIBLING_GAP_INCREMENT)
   const radius = containerRadius(node.value, 'attribute')
   fitChildrenInsideParent(children, contentRadius, radius, 22)
 
@@ -290,7 +291,7 @@ function buildCategory(
     .filter((attribute) => !attribute.hidden)
     .sort(compareByValueThenId)
     .map((attribute) => buildAttribute(attribute, node.color, node.id))
-  const contentRadius = packSiblings(children, 14)
+  const contentRadius = packSiblings(children, 14 + SIBLING_GAP_INCREMENT)
   const radius =
     containerRadius(node.value, 'category') *
     resolveCategoryAppearance(node, globalSettings).fillFactor
@@ -408,7 +409,7 @@ export function createBasicLayout(
     return { width, height, roots: [], flatNodes: [] }
   }
 
-  packSiblings(packedRoots, 24)
+  packSiblings(packedRoots, 24 + SIBLING_GAP_INCREMENT)
   const minX = Math.min(...packedRoots.map((node) => node.x - node.radius))
   const maxX = Math.max(...packedRoots.map((node) => node.x + node.radius))
   const minY = Math.min(...packedRoots.map((node) => node.y - node.radius))

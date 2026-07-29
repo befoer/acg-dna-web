@@ -260,6 +260,7 @@ export function ProjectManager() {
           <div className={'project-action-grid'}>
             <button
               type={'button'}
+              className={'project-create-button'}
               disabled={!storageAvailable || projectActionPending}
               onClick={() => void createProject()}
             >

@@ -41,6 +41,7 @@ interface CircleBoundary {
 const TAU = Math.PI * 2
 const GOLDEN_ANGLE = 137.508 * (Math.PI / 180)
 const EPSILON = 0.0001
+const CIRCLE_CONTACT_GAP = 1
 const VALIDATION_EPSILON = 0.02
 const TOP_LABEL_FONT_SIZE_RATIO = 0.18
 const TOP_LABEL_COLLISION_HEIGHT_RATIO = 0.04
@@ -356,7 +357,7 @@ function bodiesDoNotOverlap(bodies: CircleCollisionBody[]): boolean {
       const right = bodies[rightIndex]
       if (!right) continue
       if (
-        Math.hypot(right.x - left.x, right.y - left.y) + VALIDATION_EPSILON <
+        Math.hypot(right.x - left.x, right.y - left.y) + EPSILON <
         left.radius + right.radius
       ) {
         return false
@@ -534,7 +535,7 @@ function closeDisconnectedContactClusters(
   if (bodies.length <= 1) return
 
   for (let connection = 0; connection < bodies.length - 1; connection += 1) {
-    const components = findContactComponents(bodies, 0.5)
+    const components = findContactComponents(bodies, CIRCLE_CONTACT_GAP + 0.5)
     if (components.length <= 1) return
 
     let closest:
@@ -651,7 +652,7 @@ function closeDisconnectedContactClusters(
     }
 
     for (let pass = 0; pass < 96; pass += 1) {
-      separateCircleCollisions(bodies, 0, seed)
+      separateCircleCollisions(bodies, CIRCLE_CONTACT_GAP, seed)
       constrainToRectangle(bodies, boundary)
     }
   }
@@ -919,10 +920,53 @@ function compactChildrenAgainstGravity(
       collisionPass < collisionPasses;
       collisionPass += 1
     ) {
-      separateCircleCollisions(bodies, 0, seed)
+      separateCircleCollisions(bodies, CIRCLE_CONTACT_GAP, seed)
       constrainPhysicsToCircle(bodies, boundary)
     }
   }
+}
+
+function spreadChildrenAcrossCircle(
+  bodies: PhysicsBody[],
+  boundary: CircleBoundary,
+  seed: string,
+): void {
+  const ordered = [...bodies].sort(
+    (left, right) =>
+      right.radius - left.radius || left.id.localeCompare(right.id),
+  )
+  const angleOffset = stableUnit(seed + '\u0000spread') * TAU
+
+  ordered.forEach((body, index) => {
+    const maximumDistance = Math.max(
+      0,
+      boundary.radius - body.radius - boundary.inset,
+    )
+    const distance = maximumDistance * Math.sqrt((index + 0.5) / ordered.length)
+    const angle = angleOffset + index * GOLDEN_ANGLE
+    body.x = boundary.x + Math.cos(angle) * distance
+    body.y = boundary.y + Math.sin(angle) * distance
+    body.velocityX = 0
+    body.velocityY = 0
+  })
+}
+
+function resolveChildrenInsideCircle(
+  bodies: PhysicsBody[],
+  boundary: CircleBoundary,
+  seed: string,
+): boolean {
+  const passes = Math.max(240, bodies.length * 48)
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    separateCircleCollisions(bodies, CIRCLE_CONTACT_GAP, seed)
+    constrainPhysicsToCircle(bodies, boundary)
+    if (bodiesAreInsideCircle(bodies, boundary) && bodiesDoNotOverlap(bodies)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function relaxChildrenInParent(
@@ -952,14 +996,13 @@ function relaxChildrenInParent(
     radius: parent.radius,
     inset,
   }
-  const fallback = snapshotBodies(bodies)
-  let lastValid = fallback
+  let lastValid: ReturnType<typeof snapshotBodies> | undefined
   const radii = radiusRange(bodies)
   const gravity = Math.max(0.025, parent.radius * 0.00062)
   const horizontalAttraction = depth === 1 ? 0.0042 : 0.0048
   const verticalSettleStrength = depth === 1 ? 0.0032 : 0.0036
   const damping = 0.78
-  const collisionGap = 0
+  const collisionGap = CIRCLE_CONTACT_GAP
   const collisionSeed = documentId + '\u0000' + parent.id
 
   initializeChildPositions(bodies, boundary, documentId, parent.id, depth)
@@ -1009,18 +1052,35 @@ function relaxChildrenInParent(
   }
 
   // Collision separation alone cannot close an existing gap. Finish with a
-  // deterministic downward-and-inward compaction, then separate at zero gap
+  // deterministic downward-and-inward compaction, then restore the 1px gap
   // so descendants end in a connected, tangent cluster without intersections.
   compactChildrenAgainstGravity(bodies, boundary, collisionSeed)
   if (bodiesAreInsideCircle(bodies, boundary) && bodiesDoNotOverlap(bodies)) {
     lastValid = snapshotBodies(bodies)
   }
 
-  for (let pass = 0; pass < 120; pass += 1) {
-    separateCircleCollisions(bodies, collisionGap, collisionSeed)
-    constrainPhysicsToCircle(bodies, boundary)
+  let resolved = resolveChildrenInsideCircle(
+    bodies,
+    boundary,
+    collisionSeed + '\u0000final',
+  )
+  if (!resolved) {
+    spreadChildrenAcrossCircle(bodies, boundary, collisionSeed)
+    resolved = resolveChildrenInsideCircle(
+      bodies,
+      boundary,
+      collisionSeed + '\u0000spread',
+    )
   }
-  if (!bodiesAreInsideCircle(bodies, boundary) || !bodiesDoNotOverlap(bodies)) {
+  for (let attempt = 0; attempt < 6 && !resolved; attempt += 1) {
+    if (!shrinkOverlappingBodiesToFit(bodies)) break
+    resolved = resolveChildrenInsideCircle(
+      bodies,
+      boundary,
+      collisionSeed + '\u0000shrink-' + String(attempt),
+    )
+  }
+  if (!resolved && lastValid) {
     restoreBodies(bodies, lastValid)
   }
 
@@ -1208,7 +1268,11 @@ function relaxTopLevel(
         body.velocityY = 0
       }
       for (let collisionPass = 0; collisionPass < 24; collisionPass += 1) {
-        separateCircleCollisions(bodies, 0, documentId + '\u0000lane-pile')
+        separateCircleCollisions(
+          bodies,
+          CIRCLE_CONTACT_GAP,
+          documentId + '\u0000lane-pile',
+        )
         constrainPhysicsToRectangle(bodies, {
           left: pileLeft,
           top: boundary.top,
@@ -1219,7 +1283,11 @@ function relaxTopLevel(
     }
 
     for (let pass = 0; pass < 160; pass += 1) {
-      separateCircleCollisions(bodies, 0, documentId + '\u0000lane-final')
+      separateCircleCollisions(
+        bodies,
+        CIRCLE_CONTACT_GAP,
+        documentId + '\u0000lane-final',
+      )
       constrainPhysicsToRectangle(bodies, {
         left: pileLeft,
         top: boundary.top,
@@ -1279,12 +1347,20 @@ function relaxTopLevel(
       body.velocityY = 0
     }
     for (let collisionPass = 0; collisionPass < 24; collisionPass += 1) {
-      separateCircleCollisions(bodies, 0, documentId + '\u0000settle')
+      separateCircleCollisions(
+        bodies,
+        CIRCLE_CONTACT_GAP,
+        documentId + '\u0000settle',
+      )
       constrainPhysicsToRectangle(bodies, boundary)
     }
   }
   for (let pass = 0; pass < 320; pass += 1) {
-    separateCircleCollisions(bodies, 0, documentId + '\u0000final')
+    separateCircleCollisions(
+      bodies,
+      CIRCLE_CONTACT_GAP,
+      documentId + '\u0000final',
+    )
     constrainPhysicsToRectangle(bodies, boundary)
   }
   if (bodiesDoNotOverlap(bodies)) {
@@ -1311,7 +1387,11 @@ function relaxTopLevel(
       if (body.y < maximumY) body.y = maximumY
     }
     for (let collisionPass = 0; collisionPass < 12; collisionPass += 1) {
-      separateCircleCollisions(bodies, 0, documentId + '\u0000contact')
+      separateCircleCollisions(
+        bodies,
+        CIRCLE_CONTACT_GAP,
+        documentId + '\u0000contact',
+      )
       constrainPhysicsToRectangle(bodies, boundary)
     }
   }
@@ -1354,7 +1434,11 @@ function relaxTopLevel(
       }
     }
     for (let collisionPass = 0; collisionPass < 12; collisionPass += 1) {
-      separateCircleCollisions(bodies, 0, documentId + '\u0000contact-gap')
+      separateCircleCollisions(
+        bodies,
+        CIRCLE_CONTACT_GAP,
+        documentId + '\u0000contact-gap',
+      )
       constrainPhysicsToRectangle(bodies, boundary)
     }
   }
@@ -1366,7 +1450,7 @@ function relaxTopLevel(
 
   // A small category can reach the floor beside the main pile without ever
   // intersecting it. Merge any remaining disconnected contact components as
-  // rigid groups, stopping exactly at the first tangent contact. This closes
+  // rigid groups, stopping at the requested 1px circle gap. This closes
   // real holes without increasing the radii or pulling an already compact
   // group apart.
   closeDisconnectedContactClusters(
@@ -1380,7 +1464,11 @@ function relaxTopLevel(
   // separated again; most layouts exit after the first pass, while crowded
   // edge cases are allowed to converge fully.
   for (let pass = 0; pass < 640; pass += 1) {
-    separateCircleCollisions(bodies, 0, documentId + '\u0000final-safety')
+    separateCircleCollisions(
+      bodies,
+      CIRCLE_CONTACT_GAP,
+      documentId + '\u0000final-safety',
+    )
     constrainPhysicsToRectangle(bodies, boundary)
     if (bodiesDoNotOverlap(bodies)) break
   }
@@ -1401,7 +1489,7 @@ function relaxTopLevel(
     for (let pass = 0; pass < 160; pass += 1) {
       separateCircleCollisions(
         bodies,
-        0,
+        CIRCLE_CONTACT_GAP,
         documentId + '\u0000fallback-separate-' + String(attempt),
       )
       constrainPhysicsToRectangle(bodies, boundary)
@@ -1418,10 +1506,10 @@ function relaxTopLevel(
     for (let pass = 0; pass < 320; pass += 1) {
       separateCircleCollisions(
         bodies,
-        0,
+        CIRCLE_CONTACT_GAP,
         documentId + '\u0000top-label-circle-' + String(attempt),
       )
-      resolveTopLabelCollisions(bodies, topLabelNodeIds, 0)
+      resolveTopLabelCollisions(bodies, topLabelNodeIds, CIRCLE_CONTACT_GAP)
       constrainTopLevelToRectangle(bodies, boundary, topLabelNodeIds)
       topLabelsResolved = topLabelsDoNotOverlap(bodies, topLabelNodeIds)
       if (bodiesDoNotOverlap(bodies) && topLabelsResolved) break

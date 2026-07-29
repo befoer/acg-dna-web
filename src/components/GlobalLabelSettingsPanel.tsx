@@ -8,6 +8,7 @@ import { getGraphTemplate } from '../domain/templates'
 import { useEditor } from '../editor/editorContext'
 import { userErrorMessage } from '../errors/userErrorMessage'
 import { registerLocalFont } from '../fonts/fontManager'
+import { HexColorField } from './HexColorField'
 
 interface GlobalLabelSettingsPanelProps {
   embedded?: boolean
@@ -158,7 +159,7 @@ export function GlobalLabelSettingsPanel({
         </div>
         <button
           type={'button'}
-          className={'compact-button'}
+          className={'compact-button global-settings-reset'}
           onClick={resetToTemplateDefaults}
         >
           重置
@@ -292,7 +293,7 @@ export function GlobalLabelSettingsPanel({
             <strong>加载本地字体</strong>
             <small>TTF、OTF、WOFF、WOFF2，最大 20 MB</small>
           </div>
-          <label className={'file-button'}>
+          <label className={'file-button is-rectangular-control'}>
             {isLoadingFont ? '载入中…' : '选择字体'}
             <input
               type={'file'}
@@ -311,7 +312,7 @@ export function GlobalLabelSettingsPanel({
 
       <section className={'global-settings-card'} aria-label={'标签颜色设置'}>
         <h3>颜色</h3>
-        <label className={'global-color-row'}>
+        <div className={'global-color-row'}>
           <span>
             <strong>统一标签颜色</strong>
             <small>关闭后继续使用各分类颜色</small>
@@ -328,17 +329,14 @@ export function GlobalLabelSettingsPanel({
               })
             }
           />
-          <input
-            type={'color'}
-            aria-label={'标签颜色'}
+          <HexColorField
+            ariaLabel={'标签颜色'}
             value={settings.colorOverride ?? '#15B8A6'}
             disabled={settings.colorOverride === null}
-            onChange={(event) =>
-              update({ colorOverride: event.currentTarget.value }, 'tag-color')
-            }
+            onChange={(colorOverride) => update({ colorOverride }, 'tag-color')}
           />
-        </label>
-        <label className={'global-color-row'}>
+        </div>
+        <div className={'global-color-row'}>
           <span>
             <strong>统一文字颜色</strong>
             <small>关闭后根据图片和背景自动选择</small>
@@ -355,19 +353,15 @@ export function GlobalLabelSettingsPanel({
               })
             }
           />
-          <input
-            type={'color'}
-            aria-label={'文字颜色'}
+          <HexColorField
+            ariaLabel={'文字颜色'}
             value={settings.textColorOverride ?? '#242429'}
             disabled={settings.textColorOverride === null}
-            onChange={(event) =>
-              update(
-                { textColorOverride: event.currentTarget.value },
-                'text-color',
-              )
+            onChange={(textColorOverride) =>
+              update({ textColorOverride }, 'text-color')
             }
           />
-        </label>
+        </div>
       </section>
     </div>
   )

@@ -39,7 +39,7 @@ describe('local editor flow', () => {
     expect(screen.getByText('赛博叙事')).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', { name: '为 赛博叙事 选择图片' }),
+      screen.getByRole('button', { name: '为 赛博叙事 添加子标签' }),
     )
     expect(screen.getByRole('dialog', { name: '搜索图片' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '自定义' }))
@@ -49,6 +49,57 @@ describe('local editor flow', () => {
     await user.type(screen.getByLabelText('自定义名称'), '镜头语言')
     await user.click(screen.getByRole('button', { name: '确认' }))
     expect(screen.getByText('镜头语言')).toBeInTheDocument()
+  })
+
+  it('opens image search before adding a second-level label', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    await user.click(
+      screen.getByRole('button', { name: '为 动画偏好 添加属性' }),
+    )
+    expect(screen.getByRole('dialog', { name: '搜索图片' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '关闭搜索图片' }))
+
+    await user.click(screen.getByRole('button', { name: '添加一级标签' }))
+    expect(screen.getByRole('dialog', { name: '添加分类' })).toBeInTheDocument()
+  })
+
+  it('opens image search from a first-level canvas label child action', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    const graph = createStarterGraph()
+    const target = createGraphLayout(graph).flatNodes.find(
+      (node) => node.name === '动画偏好',
+    )
+    expect(target).toBeDefined()
+    const canvas = screen.getByRole('img', { name: /属性图预览/ })
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: graph.canvas.width,
+      bottom: graph.canvas.height,
+      width: graph.canvas.width,
+      height: graph.canvas.height,
+      toJSON: () => ({}),
+    })
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1,
+      clientX: target?.x,
+      clientY: (target?.y ?? 0) - (target?.radius ?? 0) * 0.55,
+    })
+    const actions = await screen.findByRole('toolbar', {
+      name: '属性圈操作',
+    })
+    await user.click(
+      within(actions).getByRole('button', { name: '添加子标签' }),
+    )
+    expect(
+      await screen.findByRole('dialog', { name: '搜索图片' }),
+    ).toBeInTheDocument()
   })
 
   it('selects a category from its spacer and clears selection from panel whitespace', () => {
@@ -106,7 +157,7 @@ describe('local editor flow', () => {
     expect(
       await screen.findByRole('dialog', { name: '搜索图片' }),
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '关闭' }))
+    await user.click(screen.getByRole('button', { name: '关闭搜索图片' }))
 
     fireEvent.pointerDown(canvas, {
       pointerId: 2,
@@ -120,9 +171,9 @@ describe('local editor flow', () => {
       within(childActions).getByRole('button', { name: '添加子标签' }),
     )
     expect(
-      await screen.findByRole('dialog', { name: '添加子属性' }),
+      await screen.findByRole('dialog', { name: '搜索图片' }),
     ).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '取消' }))
+    await user.click(screen.getByRole('button', { name: '关闭搜索图片' }))
 
     fireEvent.pointerDown(canvas, {
       pointerId: 3,
@@ -262,9 +313,13 @@ describe('local editor flow', () => {
     ).toHaveLength(4)
     expect(
       screen
-        .getByLabelText('ACG DNA Web 编辑器')
+        .getByLabelText('返回次元属性首页')
         .querySelector('.brand-mark img'),
     ).toBeInTheDocument()
+    expect(screen.getByLabelText('返回次元属性首页')).toHaveAttribute(
+      'href',
+      '/',
+    )
   })
 
   it('shows the effective custom text visibility in the shared layer list', async () => {

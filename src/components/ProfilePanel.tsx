@@ -16,6 +16,7 @@ import {
   type ProfileSubTemplate,
 } from '../domain/profileTemplates'
 import { useEditor } from '../editor/editorContext'
+import { HexColorField } from './HexColorField'
 import { LocalImageEditor } from './LocalImageEditor'
 import eyeIconUrl from '../assets/eye.svg'
 
@@ -226,18 +227,14 @@ function CustomTextCard({
               onUpdate({ maxWidth: value / 100 }, 'max-width')
             }
           />
-          <label className={'profile-color-row'}>
+          <div className={'profile-color-row'}>
             <span>颜色</span>
-            <input
-              type={'color'}
-              aria-label={'自定义文字颜色'}
+            <HexColorField
+              ariaLabel={'自定义文字颜色'}
               value={text.color}
-              onChange={(event) =>
-                onUpdate({ color: event.currentTarget.value }, 'color')
-              }
+              onChange={(color) => onUpdate({ color }, 'color')}
             />
-            <code>{text.color.toUpperCase()}</code>
-          </label>
+          </div>
           <SliderRow
             label={'描边'}
             value={text.strokeWidth}
@@ -248,21 +245,16 @@ function CustomTextCard({
               onUpdate({ strokeWidth: value }, 'stroke-width')
             }
           />
-          <label className={'profile-color-row'}>
+          <div className={'profile-color-row'}>
             <span>描边色</span>
-            <input
-              type={'color'}
-              aria-label={'自定义文字描边颜色'}
+            <HexColorField
+              ariaLabel={'自定义文字描边颜色'}
               value={text.strokeColor}
-              onChange={(event) =>
-                onUpdate(
-                  { strokeColor: event.currentTarget.value },
-                  'stroke-color',
-                )
+              onChange={(strokeColor) =>
+                onUpdate({ strokeColor }, 'stroke-color')
               }
             />
-            <code>{text.strokeColor.toUpperCase()}</code>
-          </label>
+          </div>
         </div>
       ) : null}
     </article>

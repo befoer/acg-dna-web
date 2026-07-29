@@ -173,6 +173,7 @@ export function EditorWorkspace() {
     typeof setTimeout
   > | null>(null)
   const [activePanel, setActivePanel] = useState<EditorPanelId>('data')
+  const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
   const [contentBoundsEditing, setContentBoundsEditing] = useState(false)
   const [canvasNodeAction, setCanvasNodeAction] =
     useState<CanvasNodeActionRequest | null>(null)
@@ -184,6 +185,7 @@ export function EditorWorkspace() {
   const isCanvasSizeLocked = state.document.canvas.templateId !== 'custom'
   const selectPanel = (panelId: EditorPanelId): void => {
     setActivePanel(panelId)
+    setMobilePanelCollapsed(false)
     if (panelId !== 'appearance') setContentBoundsEditing(false)
     if (panelId !== 'data') {
       dispatch({ type: 'node-selected', nodeId: null })
@@ -271,11 +273,7 @@ export function EditorWorkspace() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a
-          className="brand"
-          href="#main-editor"
-          aria-label="ACG DNA Web 编辑器"
-        >
+        <a className="brand" href="/" aria-label="返回次元属性首页">
           <span className="brand-mark" aria-hidden="true">
             <img src={brandLogo} alt="" />
           </span>
@@ -358,7 +356,9 @@ export function EditorWorkspace() {
         </nav>
 
         <section
-          className={'editor-panel-slot'}
+          className={
+            'editor-panel-slot' + (mobilePanelCollapsed ? ' is-collapsed' : '')
+          }
           aria-label={activePanelLabel + '功能面板'}
         >
           <div
@@ -373,12 +373,13 @@ export function EditorWorkspace() {
                   type={'button'}
                   role={'tab'}
                   aria-selected={selected}
+                  aria-label={panel.label}
                   className={selected ? 'is-active' : ''}
                   onClick={() => selectPanel(panel.id)}
                   key={panel.id}
                 >
                   <EditorPanelIcon icon={panel.icon} />
-                  <span>{panel.label}</span>
+                  <span className="mobile-panel-tab-label">{panel.label}</span>
                 </button>
               )
             })}
@@ -460,10 +461,12 @@ export function EditorWorkspace() {
           </div>
           <GraphCanvas
             zoom={previewZoom}
+            mobilePanelCollapsed={mobilePanelCollapsed}
             onZoom={(delta) =>
               setPreviewZoom((current) => changePreviewZoom(current, delta))
             }
             onResetView={() => setPreviewZoom(1)}
+            onBlankCanvasPointerDown={() => setMobilePanelCollapsed(true)}
             showContentBounds={
               activePanel === 'appearance' && contentBoundsEditing
             }

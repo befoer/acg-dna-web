@@ -27,6 +27,7 @@ import { LocalImageEditor } from './LocalImageEditor'
 import { ImageSearchDialog } from './ImageSearchDialog'
 import { NodeCreateDialog } from './NodeCreateDialog'
 import type { CanvasNodeActionRequest } from './canvasNodeActions'
+import type { OnlineImageKind } from '../search/onlineImageSearch'
 import eyeIconUrl from '../assets/eye.svg'
 import gearIconUrl from '../assets/gear.svg'
 import imageIconUrl from '../assets/image.svg'
@@ -109,8 +110,8 @@ function TreeRow({
             type="button"
             className="tree-icon-button tree-add-child-button"
             onClick={onAddChild}
-            aria-label={'为 ' + displayName + ' 选择图片'}
-            title="在线选择图片"
+            aria-label={'为 ' + displayName + ' 添加子标签'}
+            title="添加子标签并选择图片"
           >
             +
           </button>
@@ -346,12 +347,36 @@ interface GraphTreeProps {
   onOpenCategoryAppearance: (categoryId: string) => void
 }
 
+type TreeAddTarget =
+  | {
+      kind: 'attribute'
+      categoryId: string
+      parentName: string
+      initialKind?: OnlineImageKind
+    }
+  | {
+      kind: 'subAttribute'
+      attributeId: string
+      parentName: string
+      initialKind?: OnlineImageKind
+    }
+
+function categorySearchKind(name: string): OnlineImageKind | undefined {
+  return {
+    动画: 'anime',
+    角色: 'character',
+    游戏: 'game',
+    歌手: 'singer',
+  }[name.trim()] as OnlineImageKind | undefined
+}
+
 function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
   const { state, dispatch, attachImage, attachOnlineImage, removeNode } =
     useEditor()
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set())
   const [showCategoryDialog, setShowCategoryDialog] = useState(false)
   const [imageTargetId, setImageTargetId] = useState<string | null>(null)
+  const [treeAddTarget, setTreeAddTarget] = useState<TreeAddTarget | null>(null)
   const [showTreeImageSearch, setShowTreeImageSearch] = useState(false)
   const [showTreeCustom, setShowTreeCustom] = useState(false)
   const [treeImageEditorAssetId, setTreeImageEditorAssetId] = useState<
@@ -370,12 +395,36 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
     : undefined
   const treeImageEditorOnlineSeed = treeImageEditorAsset?.source?.searchSeed
 
-  const openTreeImageSearch = (nodeId: string) => {
-    dispatch({ type: 'node-selected', nodeId })
-    setImageTargetId(nodeId)
+  const openTreeImageSearch = (target: TreeAddTarget) => {
+    setImageTargetId(null)
+    setTreeAddTarget(target)
     setShowTreeCustom(false)
     setShowTreeImageSearch(true)
   }
+
+  const createTreeNode = (target: TreeAddTarget, name: string) => {
+    if (target.kind === 'attribute') {
+      const attribute = { ...createAttribute(), name }
+      dispatch({
+        type: 'attributes-added',
+        categoryId: target.categoryId,
+        attributes: [attribute],
+        at: timestamp(),
+      })
+      return attribute
+    }
+    const child = { ...createSubAttribute(), name }
+    dispatch({
+      type: 'sub-attributes-added',
+      attributeId: target.attributeId,
+      children: [child],
+      at: timestamp(),
+    })
+    return child
+  }
+
+  const waitForTreeNode = () =>
+    new Promise<void>((resolve) => window.setTimeout(resolve, 0))
 
   const toggleExpanded = (nodeId: string) => {
     setCollapsedIds((current) => {
@@ -446,7 +495,14 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
                                 expanded={attributeExpanded}
                                 canAddChild={true}
                                 onAddChild={() =>
-                                  openTreeImageSearch(attribute.id)
+                                  openTreeImageSearch({
+                                    kind: 'subAttribute',
+                                    attributeId: attribute.id,
+                                    parentName: attribute.name || '未命名属性',
+                                    initialKind: categorySearchKind(
+                                      category.name,
+                                    ),
+                                  })
                                 }
                                 onRemove={() => removeNode(attribute.id)}
                                 onToggleExpanded={() => {
@@ -488,8 +544,15 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
                 <button
                   type="button"
                   className="tree-add-row"
-                  aria-label={'为 ' + category.name + ' 选择图片'}
-                  onClick={() => openTreeImageSearch(category.id)}
+                  aria-label={'为 ' + category.name + ' 添加属性'}
+                  onClick={() =>
+                    openTreeImageSearch({
+                      kind: 'attribute',
+                      categoryId: category.id,
+                      parentName: category.name || '未命名分类',
+                      initialKind: categorySearchKind(category.name),
+                    })
+                  }
                 >
                   ＋
                 </button>
@@ -500,6 +563,7 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
         <button
           type="button"
           className="tree-add-category-row"
+          aria-label="添加一级标签"
           onClick={() => setShowCategoryDialog(true)}
         >
           ＋
@@ -523,34 +587,73 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
           }}
         />
       ) : null}
-      {showTreeImageSearch && imageTargetNode ? (
+      {showTreeImageSearch && (imageTargetNode || treeAddTarget) ? (
         <ImageSearchDialog
-          cacheKey={imageTargetNode.id}
-          initialQuery={imageTargetNode.name}
-          onClose={() => setShowTreeImageSearch(false)}
+          cacheKey={
+            imageTargetNode?.id ??
+            'tree-add-' + treeAddTarget?.kind + '-' + treeAddTarget?.parentName
+          }
+          initialQuery={
+            imageTargetNode?.name ?? treeAddTarget?.parentName ?? ''
+          }
+          initialKind={treeAddTarget?.initialKind}
+          onClose={() => {
+            setShowTreeImageSearch(false)
+            setTreeAddTarget(null)
+          }}
           onCustomize={() => {
             setShowTreeImageSearch(false)
             setShowTreeCustom(true)
           }}
           onSelect={async (result) => {
-            const assetId = await attachOnlineImage(imageTargetNode.id, result)
-            if (!assetId) return false
-            dispatch({
-              type: 'node-updated',
-              nodeId: imageTargetNode.id,
-              patch: { name: result.name },
-              at: timestamp(),
-            })
+            if (imageTargetNode) {
+              const assetId = await attachOnlineImage(
+                imageTargetNode.id,
+                result,
+              )
+              if (!assetId) return false
+              dispatch({
+                type: 'node-updated',
+                nodeId: imageTargetNode.id,
+                patch: { name: result.name },
+                at: timestamp(),
+              })
+              setShowTreeImageSearch(false)
+              setTreeImageEditorAssetId(assetId)
+              return false
+            }
+            if (!treeAddTarget) return false
+            const node = createTreeNode(treeAddTarget, result.name)
             setShowTreeImageSearch(false)
-            setTreeImageEditorAssetId(assetId)
-            return false
+            setTreeAddTarget(null)
+            await waitForTreeNode()
+            const assetId = await attachOnlineImage(node.id, result)
+            if (!assetId) return false
+            dispatch({ type: 'node-selected', nodeId: node.id })
+            return true
           }}
         />
       ) : null}
-      {showTreeCustom && imageTargetNode && imageTargetMatch ? (
+      {showTreeCustom && (imageTargetNode || treeAddTarget) ? (
         <TreeCustomDialog
-          onClose={() => setShowTreeCustom(false)}
+          onClose={() => {
+            setShowTreeCustom(false)
+            setTreeAddTarget(null)
+          }}
           onConfirm={async ({ file, name }) => {
+            if (!imageTargetNode && treeAddTarget) {
+              const node = createTreeNode(treeAddTarget, name || '未命名')
+              setTreeAddTarget(null)
+              if (!file) return true
+              await waitForTreeNode()
+              const assetId = await attachImage(node.id, file)
+              if (!assetId) return false
+              dispatch({ type: 'node-selected', nodeId: node.id })
+              setImageTargetId(node.id)
+              setTreeImageEditorAssetId(assetId)
+              return true
+            }
+            if (!imageTargetNode || !imageTargetMatch) return false
             if (file) {
               const assetId = await attachImage(imageTargetNode.id, file)
               if (!assetId) return false
@@ -642,6 +745,13 @@ interface SelectedNodeEditorProps {
   onCanvasNodeActionHandled: () => void
 }
 
+type CanvasChildTarget = {
+  kind: 'attribute' | 'subAttribute'
+  parentId: string
+  parentName: string
+  initialKind?: OnlineImageKind
+}
+
 function SelectedNodeEditor({
   canvasNodeAction,
   onCanvasNodeActionHandled,
@@ -656,13 +766,18 @@ function SelectedNodeEditor({
   )
   const [showImageSearch, setShowImageSearch] = useState(false)
   const [showCustomContent, setShowCustomContent] = useState(false)
-  const [showCanvasChildDialog, setShowCanvasChildDialog] = useState(false)
+  const [canvasChildTarget, setCanvasChildTarget] =
+    useState<CanvasChildTarget | null>(null)
+  const [showCanvasChildCustom, setShowCanvasChildCustom] = useState(false)
   const editorAsset = imageEditorAssetId
     ? state.assets[imageEditorAssetId]
     : undefined
   const imageEditorOnlineSeed = editorAsset?.source?.searchSeed
   const selectedNodeId = match?.node.id
   const selectedNodeKind = match?.kind
+  const selectedCategory = match?.categoryId
+    ? state.document.categories.find((item) => item.id === match.categoryId)
+    : undefined
 
   useEffect(() => {
     if (
@@ -677,11 +792,23 @@ function SelectedNodeEditor({
         if (asset) setImageEditorAssetId(asset.id)
         else setShowImageSearch(true)
       }
-      if (
-        canvasNodeAction.action === 'child' &&
-        selectedNodeKind === 'attribute'
-      ) {
-        setShowCanvasChildDialog(true)
+      if (canvasNodeAction.action === 'child') {
+        if (selectedNodeKind === 'category') {
+          setCanvasChildTarget({
+            kind: 'attribute',
+            parentId: selectedNodeId,
+            parentName: match?.node.name || '未命名分类',
+            initialKind: categorySearchKind(selectedCategory?.name ?? ''),
+          })
+        }
+        if (selectedNodeKind === 'attribute') {
+          setCanvasChildTarget({
+            kind: 'subAttribute',
+            parentId: selectedNodeId,
+            parentName: match?.node.name || '未命名属性',
+            initialKind: categorySearchKind(selectedCategory?.name ?? ''),
+          })
+        }
       }
       onCanvasNodeActionHandled()
     }, 0)
@@ -692,6 +819,8 @@ function SelectedNodeEditor({
     onCanvasNodeActionHandled,
     selectedNodeId,
     selectedNodeKind,
+    selectedCategory?.name,
+    match?.node.name,
   ])
 
   if (!match) {
@@ -730,6 +859,26 @@ function SelectedNodeEditor({
       return
     }
     setShowImageSearch(true)
+  }
+  const createCanvasChild = (target: CanvasChildTarget, name: string) => {
+    if (target.kind === 'attribute') {
+      const attribute = { ...createAttribute(), name }
+      dispatch({
+        type: 'attributes-added',
+        categoryId: target.parentId,
+        attributes: [attribute],
+        at: timestamp(),
+      })
+      return attribute
+    }
+    const child = { ...createSubAttribute(), name }
+    dispatch({
+      type: 'sub-attributes-added',
+      attributeId: target.parentId,
+      children: [child],
+      at: timestamp(),
+    })
+    return child
   }
 
   return (
@@ -874,22 +1023,48 @@ function SelectedNodeEditor({
           }}
         />
       ) : null}
-      {showCanvasChildDialog && kind === 'attribute' ? (
-        <NodeCreateDialog
-          kind="subAttribute"
-          parentName={node.name || '未命名属性'}
-          onCancel={() => setShowCanvasChildDialog(false)}
-          onConfirm={(names) => {
-            dispatch({
-              type: 'sub-attributes-added',
-              attributeId: node.id,
-              children: names.map((name) => ({
-                ...createSubAttribute(),
-                name,
-              })),
-              at: timestamp(),
-            })
-            setShowCanvasChildDialog(false)
+      {canvasChildTarget &&
+      !showCanvasChildCustom &&
+      canvasChildTarget.parentId === node.id ? (
+        <ImageSearchDialog
+          cacheKey={'canvas-child-' + canvasChildTarget.parentId}
+          initialQuery={canvasChildTarget.parentName}
+          initialKind={canvasChildTarget.initialKind}
+          onClose={() => setCanvasChildTarget(null)}
+          onCustomize={() => {
+            setShowCanvasChildCustom(true)
+          }}
+          onSelect={async (result) => {
+            const child = createCanvasChild(canvasChildTarget, result.name)
+            setCanvasChildTarget(null)
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+            const assetId = await attachOnlineImage(child.id, result)
+            if (!assetId) return false
+            dispatch({ type: 'node-selected', nodeId: child.id })
+            return true
+          }}
+        />
+      ) : null}
+      {showCanvasChildCustom && canvasChildTarget ? (
+        <TreeCustomDialog
+          onClose={() => {
+            setShowCanvasChildCustom(false)
+            setCanvasChildTarget(null)
+          }}
+          onConfirm={async ({ file, name }) => {
+            if (!file && !name) return false
+            const child = createCanvasChild(canvasChildTarget, name || '未命名')
+            setShowCanvasChildCustom(false)
+            setCanvasChildTarget(null)
+            if (!file) {
+              dispatch({ type: 'node-selected', nodeId: child.id })
+              return true
+            }
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+            const assetId = await attachImage(child.id, file)
+            if (!assetId) return false
+            dispatch({ type: 'node-selected', nodeId: child.id })
+            return true
           }}
         />
       ) : null}
@@ -982,7 +1157,7 @@ export function EditorPanel({
         <div className={'panel-header-actions'}>
           <button
             type={'button'}
-            className={'ghost-button'}
+            className={'ghost-button is-rectangular-control'}
             aria-label={'导入文字'}
             onClick={() => setShowTextImport(true)}
           >
@@ -990,7 +1165,7 @@ export function EditorPanel({
           </button>
           <button
             type={'button'}
-            className={'ghost-button'}
+            className={'ghost-button is-rectangular-control'}
             aria-label={'导出文字'}
             onClick={() => setShowTextExport(true)}
           >

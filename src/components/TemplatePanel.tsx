@@ -24,31 +24,44 @@ export function TemplatePanel() {
               : {}),
           } as CSSProperties
           return (
-            <button
-              type={'button'}
-              className={'template-card' + (selected ? ' is-selected' : '')}
-              aria-pressed={selected}
-              onClick={() =>
-                dispatch({
-                  type: 'template-applied',
-                  templateId: template.id,
-                  at: new Date().toISOString(),
-                })
-              }
-              key={template.id}
-            >
-              <span className={'template-preview'} style={previewStyle}>
-                {template.backgroundImageUrl ? null : (
-                  <span aria-hidden={true}>ACG DNA</span>
-                )}
-              </span>
+            <div className={'template-option'} key={template.id}>
+              <button
+                type={'button'}
+                className={'template-card' + (selected ? ' is-selected' : '')}
+                aria-pressed={selected}
+                aria-label={'应用模板：' + template.name}
+                onClick={() =>
+                  dispatch({
+                    type: 'template-applied',
+                    templateId: template.id,
+                    at: new Date().toISOString(),
+                  })
+                }
+              >
+                <span
+                  className={
+                    'template-preview' +
+                    (template.id === 'custom' ? ' is-custom' : '')
+                  }
+                  style={previewStyle}
+                >
+                  {template.id === 'custom' ? (
+                    <span
+                      className={'template-preview-plus'}
+                      aria-hidden={true}
+                    >
+                      +
+                    </span>
+                  ) : null}
+                </span>
+                <span className={'template-selected-mark'} aria-hidden={true}>
+                  <span />
+                </span>
+              </button>
               <span className={'template-card-copy'}>
                 <strong>{template.name}</strong>
               </span>
-              <span className={'template-selected-mark'} aria-hidden={true}>
-                <span />
-              </span>
-            </button>
+            </div>
           )
         })}
       </div>

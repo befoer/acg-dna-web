@@ -32,7 +32,7 @@ export const GRAPH_TEMPLATES: readonly GraphTemplateDefinition[] = [
     id: 'custom',
     name: '自定义',
     description: '标签范围覆盖整张画布的纯色基础版式',
-    backgroundColor: '#F6F2EC',
+    backgroundColor: '#F2F2F2',
     width: 1380,
     height: 2000,
     contentBounds: { ...DEFAULT_CONTENT_BOUNDS },

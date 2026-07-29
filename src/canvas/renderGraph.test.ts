@@ -43,7 +43,7 @@ function assertRootsFormContactCluster(roots: LayoutNode[]): void {
         const surfaceGap =
           Math.hypot(right.x - left.x, right.y - left.y) -
           (left.radius + right.radius)
-        if (surfaceGap <= 0.5) {
+        if (surfaceGap <= 3) {
           connected.add(rightIndex)
           changed = true
         }

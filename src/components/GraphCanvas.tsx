@@ -38,6 +38,7 @@ import {
 } from '../canvas/decorationRenderer'
 import { useEditor } from '../editor/editorContext'
 import { userErrorMessage } from '../errors/userErrorMessage'
+import imageIconUrl from '../assets/image.svg'
 import {
   computeCanvasNodeActionGeometry,
   type CanvasNodeActionRequest,
@@ -67,6 +68,8 @@ interface GraphCanvasProps {
   zoom: number
   onZoom?: (delta: number) => void
   onResetView?: () => void
+  onBlankCanvasPointerDown?: () => void
+  mobilePanelCollapsed?: boolean
   showContentBounds?: boolean
   onNodeAction?: (request: CanvasNodeActionRequest) => void
 }
@@ -75,6 +78,8 @@ export function GraphCanvas({
   zoom,
   onZoom,
   onResetView,
+  onBlankCanvasPointerDown,
+  mobilePanelCollapsed = false,
   showContentBounds = false,
   onNodeAction,
 }: GraphCanvasProps) {
@@ -375,9 +380,14 @@ export function GraphCanvas({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
+  const isMobileCanvasWorkspace = window.innerWidth < 900
+  const horizontalGutter =
+    isMobileCanvasWorkspace && mobilePanelCollapsed ? 0 : CANVAS_GUTTER
+  const verticalGutter =
+    isMobileCanvasWorkspace && !mobilePanelCollapsed ? 0 : CANVAS_GUTTER
   const fitScale = computeFitScale(
-    Math.max(0, frameSize.width - CANVAS_GUTTER * 2),
-    Math.max(0, frameSize.height - CANVAS_GUTTER * 2),
+    Math.max(0, frameSize.width - horizontalGutter * 2),
+    Math.max(0, frameSize.height - verticalGutter * 2),
     state.document.canvas.width,
     state.document.canvas.height,
   )
@@ -391,8 +401,8 @@ export function GraphCanvas({
       frameSize.width > 0 && frameSize.height > 0 ? 'visible' : 'hidden',
   }
   const surfaceStyle: CSSProperties = {
-    width: Math.max(frameSize.width, displayWidth + CANVAS_GUTTER * 2),
-    height: Math.max(frameSize.height, displayHeight + CANVAS_GUTTER * 2),
+    width: Math.max(frameSize.width, displayWidth + horizontalGutter * 2),
+    height: Math.max(frameSize.height, displayHeight + verticalGutter * 2),
   }
   const selectedLayoutNode =
     nodeActionMenuId && state.selectedNodeId === nodeActionMenuId
@@ -1144,6 +1154,14 @@ export function GraphCanvas({
 
   const startBlankCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (
+      !isDesktopCanvasWorkspace() &&
+      event.button === 0 &&
+      event.target === event.currentTarget
+    ) {
+      onBlankCanvasPointerDown?.()
+      return
+    }
+    if (
       !isDesktopCanvasWorkspace() ||
       event.button !== 0 ||
       event.target !== event.currentTarget
@@ -1255,7 +1273,12 @@ export function GraphCanvas({
                   })
                 }}
               >
-                图片
+                <img
+                  className="canvas-node-action-icon"
+                  src={imageIconUrl}
+                  alt=""
+                  aria-hidden="true"
+                />
               </button>
               {!hidesChildAction ? (
                 <button
@@ -1273,7 +1296,7 @@ export function GraphCanvas({
                     })
                   }}
                 >
-                  子标签
+                  <span aria-hidden="true">+</span>
                 </button>
               ) : null}
               <button
@@ -1291,7 +1314,7 @@ export function GraphCanvas({
                   })
                 }}
               >
-                删除
+                <span aria-hidden="true">×</span>
               </button>
             </div>
           ) : null}
