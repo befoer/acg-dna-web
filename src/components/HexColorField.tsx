@@ -18,27 +18,13 @@ export function HexColorField({
   onChange,
 }: HexColorFieldProps) {
   const normalizedValue = normalizeHexColor(value) ?? '#000000'
-
-  return (
-    <HexColorFieldInputs
-      key={normalizedValue}
-      normalizedValue={normalizedValue}
-      ariaLabel={ariaLabel}
-      disabled={disabled}
-      className={className}
-      onChange={onChange}
-    />
-  )
-}
-
-function HexColorFieldInputs({
-  normalizedValue,
-  ariaLabel,
-  disabled,
-  className,
-  onChange,
-}: Omit<HexColorFieldProps, 'value'> & { normalizedValue: string }) {
   const [draft, setDraft] = useState(normalizedValue.toUpperCase())
+  const [draftSource, setDraftSource] = useState(normalizedValue)
+
+  if (draftSource !== normalizedValue) {
+    setDraftSource(normalizedValue)
+    setDraft(normalizedValue.toUpperCase())
+  }
 
   const commitDraft = () => {
     const normalized = normalizeHexColor(draft)

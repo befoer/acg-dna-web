@@ -254,4 +254,26 @@ describe('online image search', () => {
       retryAfterSeconds: null,
     })
   })
+
+  it('honors AniList retry guidance before sending another request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ errors: [{ message: 'Too Many Requests' }] }),
+        {
+          status: 429,
+          headers: { 'Retry-After': '30' },
+        },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      searchOnlineImages('後藤ひとり', 'character', { provider: 'anilist' }),
+    ).rejects.toThrow('请在 30 秒后重试')
+    await expect(
+      searchOnlineImages('伊地知虹夏', 'character', { provider: 'anilist' }),
+    ).rejects.toThrow('请在 30 秒后重试')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

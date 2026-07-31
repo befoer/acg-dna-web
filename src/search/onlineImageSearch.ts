@@ -51,6 +51,9 @@ const BANGUMI_API_URL = 'https://api.bgm.tv'
 
 const SEARCH_LIMIT = 18
 const MAX_CACHE_ENTRIES = 80
+const ANILIST_DEFAULT_COOLDOWN_SECONDS = 60
+
+let anilistCooldownUntil = 0
 
 interface CacheEntry {
   response: OnlineImageSearchResponse
@@ -275,6 +278,37 @@ function headerNumber(headers: Headers, name: string): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function anilistCooldownSeconds(headers: Headers): number | null {
+  const retryAfter = headerNumber(headers, 'Retry-After')
+  if (retryAfter !== null && retryAfter > 0) return Math.ceil(retryAfter)
+
+  const resetAt = headerNumber(headers, 'X-RateLimit-Reset')
+  if (resetAt === null) return null
+  const remainingMilliseconds = resetAt * 1000 - Date.now()
+  return remainingMilliseconds > 0
+    ? Math.ceil(remainingMilliseconds / 1000)
+    : null
+}
+
+function setAniListCooldown(seconds: number | null): number {
+  const duration = seconds ?? ANILIST_DEFAULT_COOLDOWN_SECONDS
+  anilistCooldownUntil = Math.max(
+    anilistCooldownUntil,
+    Date.now() + duration * 1000,
+  )
+  return duration
+}
+
+function ensureAniListAvailable(): void {
+  const remainingMilliseconds = anilistCooldownUntil - Date.now()
+  if (remainingMilliseconds <= 0) return
+  const remainingSeconds = Math.ceil(remainingMilliseconds / 1000)
+  throw new OnlineImageSearchError(
+    `AniList 请求过于频繁，请在 ${remainingSeconds} 秒后重试`,
+    remainingSeconds,
+  )
+}
+
 function titleText(value: {
   native?: string | null
   english?: string | null
@@ -311,6 +345,7 @@ async function searchAniList(
   if (kind === 'game' || kind === 'singer') {
     throw new OnlineImageSearchError('AniList 暂不支持游戏或歌手搜索')
   }
+  ensureAniListAvailable()
   const graphql =
     kind === 'character'
       ? `query ($search: String, $perPage: Int) {
@@ -351,11 +386,12 @@ async function searchAniList(
     },
     '无法连接 AniList，请检查网络后重试',
   )
-  const retryAfterSeconds = headerNumber(response.headers, 'Retry-After')
+  const retryAfterSeconds = anilistCooldownSeconds(response.headers)
   if (response.status === 429) {
+    const cooldownSeconds = setAniListCooldown(retryAfterSeconds)
     throw new OnlineImageSearchError(
-      'AniList 请求过于频繁，请稍后再试',
-      retryAfterSeconds,
+      `AniList 请求过于频繁，请在 ${cooldownSeconds} 秒后重试`,
+      cooldownSeconds,
     )
   }
   if (!response.ok) {
@@ -457,12 +493,16 @@ async function searchAniList(
       })
     }
   }
+  const remaining = headerNumber(response.headers, 'X-RateLimit-Remaining')
+  if (remaining !== null && remaining <= 0) {
+    setAniListCooldown(retryAfterSeconds)
+  }
   return {
     provider: 'anilist',
     results,
     rateLimit: {
       limit: headerNumber(response.headers, 'X-RateLimit-Limit'),
-      remaining: headerNumber(response.headers, 'X-RateLimit-Remaining'),
+      remaining,
       retryAfterSeconds,
     },
   }

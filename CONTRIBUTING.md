@@ -30,8 +30,8 @@ npm run build
 ## 发布边界
 
 - `npm run build` 只生成 `dist/`，不会自动上传前端。
-- `npx wrangler deploy` 只发布 Bangumi 受限网关；执行前必须获得项目所有者授权并确认当前 Cloudflare 账号。
-- 不提交 Wrangler 登录状态、令牌、服务器凭据或本地 `.env`。
+- Bangumi 网关属于私有服务，不在本仓库中维护或发布。
+- 不提交服务端源码、部署配置、Wrangler 登录状态、令牌、服务器凭据或本地 `.env`。
 
 ## 提交信息
 

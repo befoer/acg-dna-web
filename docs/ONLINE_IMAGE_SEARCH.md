@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-在线搜索采用 Bangumi 主搜索、AniList 备用和候选补充的双提供方流程。默认通过作者控制的受限无状态网关 `https://bangumi-api.acg-dna.top` 访问 Bangumi；Bangumi 支持角色、动画、游戏和歌手，角色与动画可手动切换 AniList，或使用 Bangumi 返回的日文原名重搜。用户确认 Bangumi 角色或动画结果后，图片调整窗口使用该结果的日文原名加载 AniList 候选，同时保留 Bangumi 原图供切换，不把 Bangumi 第一条结果在未确认时自动选为最终图片。Canvas 不长期依赖第三方热链。
+在线搜索采用 Bangumi 主搜索、AniList 备用和候选补充的双提供方流程。默认通过项目维护的受限私有网关 `https://bangumi-api.acg-dna.top` 访问 Bangumi；Bangumi 支持角色、动画、游戏和歌手，角色与动画可手动切换 AniList，或使用 Bangumi 返回的日文原名重搜。用户确认 Bangumi 角色或动画结果后，图片调整窗口使用该结果的日文原名加载 AniList 候选，同时保留 Bangumi 原图供切换，不把 Bangumi 第一条结果在未确认时自动选为最终图片。Canvas 不长期依赖第三方热链。
 
 可通过 `VITE_BANGUMI_GATEWAY_URL` 替换网关部署地址。仅在调试 CORS 或网络环境时，可显式设置 `VITE_BANGUMI_SEARCH_MODE=direct` 让浏览器直连 Bangumi 文字 API；此模式不读取 Bangumi 图片，不是正式默认路径。AniList 继续由浏览器直接调用。
 
@@ -26,7 +26,7 @@
 - 新搜索开始时使用 AbortController 取消旧请求；AniList 请求按 Bangumi 候选名称缓存。
 - 每页最多请求 12 至 20 条结果。
 - 读取 X-RateLimit-Limit、X-RateLimit-Remaining、Retry-After 和 X-RateLimit-Reset。
-- 遇到 429 时暂停请求并显示剩余等待时间。
+- 遇到 429 或响应头显示额度耗尽时，在当前页面会话中暂停 AniList 后续请求，并显示剩余等待时间。
 - 尽可能过滤成人内容；角色搜索需要结合其关联作品的 isAdult 信息做额外检查。
 - 不批量抓取、不把 AniList 当作备份数据库、不预下载完整数据集。
 
@@ -59,12 +59,9 @@
 - 图片代理只接受 HTTPS 的 lain.bgm.tv/pic/ 路径，最大 15 MB，并校验响应图片类型。
 - 网关不接收项目内容、用户画像、账号或设备标识。
 - 不把 Bangumi 图片直接作为 Canvas 热链；选中后必须下载为 Blob 并保存到当前本地项目。
-- 网关源码随 Web 项目公开，部署地址可通过 VITE_BANGUMI_GATEWAY_URL 替换。
-- 当前正式网关域名为 `https://bangumi-api.acg-dna.top`；`workers.dev` 地址只作为 Cloudflare 内部部署入口，不再作为前端默认地址。
-- 网关只接受正式站点 `https://acg-dna.com`、`https://www.acg-dna.com` 和本地开发地址的浏览器 Origin；`/health` 可在无 Origin 时检查。非白名单 Origin 返回 403。
-- Worker Rate Limiting binding 按客户端 IP 限制：搜索每 10 秒最多 30 次，图片代理每 60 秒最多 120 次；超限分别返回 429 和 `Retry-After`。这不是身份认证，非浏览器脚本仍可能伪造 Origin，因此限速不可省略。
-- 限速计数由 Cloudflare 按边缘位置最终一致地执行，适合防滥用而不是精确计费或账号配额。
-- Worker 名称为 `acg-dna-bangumi-probe`，`npx wrangler deploy` 只发布该网关，不发布前端站点。发布后至少验证 `/health`、正式 Origin 搜索、非白名单 Origin 403、限流响应和图片 Blob。
+- 网关实现和部署配置作为私有服务维护，不随 Web 仓库公开；客户端可通过 `VITE_BANGUMI_GATEWAY_URL` 指向获授权的兼容服务。
+- 当前正式网关域名为 `https://bangumi-api.acg-dna.top`。
+- 网关只提供编辑器需要的固定搜索、固定作品角色查询与 Bangumi 图片获取；它不是任意 URL 代理，并实施来源与频率限制。
 
 ## 版权边界
 
@@ -77,6 +74,7 @@ API 可访问不代表图片获得再许可。界面必须显示来源和版权�
 ## 缓存与隐私
 
 - 小规模搜索结果按“提供方 + 类型 + 标准化搜索词”在内存中缓存到当前页面关闭或刷新；最多保留最近使用的 80 条，超过后淘汰最久未使用项。重复打开调整窗口或再次查询相同候选时会优先复用缓存，减少 Bangumi 和 AniList 请求。缓存只保存搜索结果元数据和缩略图地址，不保存第三方图片 Blob。
+- AniList 仅由用户提交搜索时调用；搜索进行中按钮禁用并取消旧请求。收到 429 或额度耗尽响应后，页面会话按 `Retry-After` 或 `X-RateLimit-Reset` 冷却，避免立即重试继续消耗上游额度。
 - 同一属性节点的搜索窗口会在当前页面会话中恢复上次搜索词、搜索类型、结果和状态；完整刷新页面或关闭标签页后会清除这层界面缓存。
 - 选中 Bangumi 结果后，其中文名、日文原名、来源和图片地址会作为解析上下文随最终图片资产保存。即使最终改选 AniList 头像，重新打开图片调整窗口仍会同时显示 Bangumi 原图和 AniList 方形头像候选。
 - 首次确认搜索结果时，节点名称同步为该结果显示名；在同一调整窗口中从 Bangumi 原图改选 AniList 头像不会改变已经确认的 Bangumi 中文名。角色缩略图和默认裁切顶部聚焦，动画图片保持居中。
