@@ -335,9 +335,11 @@ describe('ImageSearchDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     await screen.findByText('找到 14 个 Bangumi 结果。')
-    expect(container.querySelectorAll('.image-search-result img')).toHaveLength(
-      6,
-    )
+    const thumbnails = container.querySelectorAll('.image-search-result img')
+    expect(thumbnails).toHaveLength(6)
+    expect(thumbnails[0]).toHaveAttribute('loading', 'eager')
+    expect(thumbnails[0]).toHaveAttribute('fetchpriority', 'high')
+    expect(thumbnails[1]).toHaveAttribute('loading', 'lazy')
 
     const scrollArea = container.querySelector<HTMLElement>(
       '.image-search-results',
@@ -407,6 +409,38 @@ describe('ImageSearchDialog', () => {
     ).toHaveTextContent('小叽')
     expect(searchMock).toHaveBeenCalledTimes(1)
   })
+
+  it('prefers an explicit initial kind over a saved search session', async () => {
+    searchMock.mockResolvedValue({ provider: 'bangumi', results: [] })
+    const first = render(
+      <ImageSearchDialog
+        cacheKey={'node-category-kind'}
+        initialQuery={'孤独摇滚'}
+        onClose={() => undefined}
+        onSelect={async () => true}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '游戏' }))
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    await screen.findByText(
+      'Bangumi 没有找到结果，可切换 AniList 或补充名称后重试。',
+    )
+    first.unmount()
+
+    render(
+      <ImageSearchDialog
+        cacheKey={'node-category-kind'}
+        initialQuery={'孤独摇滚'}
+        initialKind={'anime'}
+        onClose={() => undefined}
+        onSelect={async () => true}
+      />,
+    )
+
+    expect(screen.getByPlaceholderText('搜索动画')).toBeInTheDocument()
+  })
+
   it('switches to AniList manually and can reuse the Bangumi Japanese name', async () => {
     const bangumiResult = {
       provider: 'bangumi' as const,

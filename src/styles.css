@@ -10,6 +10,7 @@
     sans-serif;
   color: #f5f5f7;
   background: #18181b;
+  color-scheme: only dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --shell: #18181b;
@@ -375,33 +376,6 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.project-name-field {
-  display: flex;
-  min-width: 0;
-  max-width: 480px;
-  flex: 1;
-}
-
-.project-name-field input {
-  width: 100%;
-  min-width: 0;
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: var(--text);
-  background: transparent;
-  font-size: 15px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-}
-
-.project-name-field input:hover,
-.project-name-field input:focus {
-  border-color: var(--border);
-  background: var(--panel-soft);
-}
-
 .topbar-actions {
   display: flex;
   flex: 0 0 auto;
@@ -429,6 +403,17 @@ button:disabled {
   background: var(--panel-soft);
   font-size: 21px;
   line-height: 1;
+}
+
+.history-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .history-button:hover:not(:disabled) {
@@ -545,6 +530,7 @@ button.persistence-retry {
 }
 
 .tool-rail {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -585,6 +571,76 @@ button.persistence-retry {
   border-color: rgba(21, 216, 197, 0.2);
   color: var(--accent);
   background: rgba(21, 216, 197, 0.09);
+}
+
+.tool-project-links {
+  position: relative;
+  width: 52px;
+  margin-top: auto;
+}
+
+.tool-project-menu-trigger {
+  display: grid;
+  width: 52px;
+  height: 44px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  background: transparent;
+}
+
+.tool-project-menu-trigger:hover,
+.tool-project-menu-trigger[aria-expanded='true'] {
+  color: var(--accent);
+  background: rgba(21, 216, 197, 0.09);
+}
+
+.tool-project-menu-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tool-project-menu-trigger svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.tool-project-menu {
+  position: absolute;
+  z-index: 20;
+  bottom: 0;
+  left: calc(100% + 8px);
+  display: grid;
+  width: max-content;
+  min-width: 154px;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #25262a;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+.tool-project-menu a {
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.tool-project-menu a:hover,
+.tool-project-menu a:focus-visible {
+  color: #1c1c1f;
+  background: var(--accent);
+  outline: 0;
 }
 
 .editor-panel-slot {
@@ -2806,6 +2862,103 @@ button.persistence-retry {
   scrollbar-width: thin;
 }
 
+.canvas-display-controls {
+  position: relative;
+  z-index: 7;
+  display: inline-flex;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  color: #f3f5f6;
+  background: rgba(37, 38, 43, 0.9);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+.canvas-display-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.canvas-display-primary {
+  padding: 0 10px;
+}
+
+.canvas-display-primary[aria-pressed='false'] {
+  color: rgba(243, 245, 246, 0.52);
+}
+
+.canvas-display-more-trigger {
+  display: grid !important;
+  width: 32px;
+  padding: 0;
+  place-items: center;
+  border-left: 1px solid rgba(255, 255, 255, 0.13) !important;
+  color: rgba(243, 245, 246, 0.72) !important;
+  font-size: 0 !important;
+}
+
+.canvas-display-more-trigger svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.2;
+}
+
+.canvas-display-controls button:hover,
+.canvas-display-controls button:focus-visible,
+.canvas-display-more-trigger[aria-expanded='true'] {
+  color: #ffffff !important;
+  background: rgba(21, 216, 197, 0.14);
+  outline: none;
+}
+
+.canvas-display-more-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9px;
+  color: #f3f5f6;
+  background: rgba(37, 38, 43, 0.96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26);
+}
+
+.canvas-display-more-menu button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.canvas-display-more-menu button > span {
+  padding-left: 7px;
+}
+
+.canvas-display-more-menu i {
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  place-items: center;
+  color: var(--accent);
+  font-size: 8px;
+  font-style: normal;
+}
+
 .canvas-surface {
   display: grid;
   min-width: 100%;
@@ -4083,6 +4236,10 @@ button.persistence-retry {
 }
 
 @media (max-width: 899px) {
+  .canvas-display-controls {
+    display: none;
+  }
+
   .app-shell {
     min-height: 520px;
   }
@@ -4189,12 +4346,6 @@ button.persistence-retry {
 
   .brand-mark img {
     width: 38px;
-  }
-
-  .project-name-field input {
-    height: 44px;
-    padding-inline: 8px;
-    font-size: 13px;
   }
 
   .history-controls {
@@ -5452,6 +5603,11 @@ button.persistence-retry {
 .tree-row-depth-0 .tree-name {
   font-size: 18px;
   font-weight: 760;
+}
+
+.tree-row-depth-1 .tree-name,
+.tree-row-depth-2 .tree-name {
+  font-weight: 520;
 }
 
 .tree-color {

@@ -380,7 +380,7 @@ describe('graph layout content bounds', () => {
     const hiddenContext = createCanvasContext()
 
     renderGraph(hiddenContext, document, { [asset.id]: asset })
-    expect(hiddenContext.fillText).not.toHaveBeenCalled()
+    expect(hiddenContext.fillText).toHaveBeenCalled()
     expect(hiddenContext.drawImage).not.toHaveBeenCalled()
 
     document.canvas.labelSettings.showCategoryText = true
@@ -393,7 +393,7 @@ describe('graph layout content bounds', () => {
     expect(visibleContext.rotate).toHaveBeenCalledWith(Math.PI / 6)
   })
 
-  it('hides a node label after its image is available', () => {
+  it('shows a node label over its image only when label text is enabled', () => {
     const document = createStarterGraph('2026-07-16T00:00:00.000Z')
     document.canvas.templateId = 'endfield'
     const category = document.categories[0]!
@@ -426,10 +426,10 @@ describe('graph layout content bounds', () => {
       objectUrl: 'blob:image-label',
       image,
     }
-    const context = createCanvasContext()
+    const hiddenContext = createCanvasContext()
 
     renderGraph(
-      context,
+      hiddenContext,
       document,
       { [asset.id]: asset },
       {
@@ -442,8 +442,30 @@ describe('graph layout content bounds', () => {
       },
     )
 
-    expect(context.drawImage).toHaveBeenCalled()
-    expect(context.fillText).not.toHaveBeenCalledWith(
+    expect(hiddenContext.drawImage).toHaveBeenCalled()
+    expect(hiddenContext.fillText).not.toHaveBeenCalledWith(
+      '图片标签',
+      expect.any(Number),
+      expect.any(Number),
+      expect.anything(),
+    )
+
+    document.canvas.labelSettings.showLabelText = true
+    const visibleContext = createCanvasContext()
+    renderGraph(
+      visibleContext,
+      document,
+      { [asset.id]: asset },
+      {
+        layout: {
+          width: document.canvas.width,
+          height: document.canvas.height,
+          roots: [imageNode],
+          flatNodes: [imageNode],
+        },
+      },
+    )
+    expect(visibleContext.fillText).toHaveBeenCalledWith(
       '图片标签',
       expect.any(Number),
       expect.any(Number),
@@ -454,6 +476,7 @@ describe('graph layout content bounds', () => {
   it('places the category name over a rounded gap in the top outline', () => {
     const document = createStarterGraph('2026-07-16T00:00:00.000Z')
     document.canvas.templateId = 'endfield'
+    document.canvas.labelSettings.showLabelText = true
     const category = document.categories[0]!
     const subAttributeNode = {
       id: 'nested-sub-attribute',
@@ -576,6 +599,7 @@ describe('graph layout content bounds', () => {
   it('does not draw a weight value below third-level text', () => {
     const document = createStarterGraph('2026-07-16T00:00:00.000Z')
     document.canvas.templateId = 'endfield'
+    document.canvas.labelSettings.showLabelText = true
     const category = document.categories[0]!
     const subAttribute = {
       id: 'third-level-node',

@@ -11,6 +11,7 @@ describe('online image search', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -160,6 +161,30 @@ describe('online image search', () => {
     await expect(searchOnlineImages('小叽', 'character')).rejects.toThrow(
       '无法连接 Bangumi 搜索服务，请检查网络后重试',
     )
+  })
+
+  it('stops a stalled Bangumi request with a retryable Chinese timeout error', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('aborted', 'AbortError')),
+              { once: true },
+            )
+          }),
+      ),
+    )
+
+    const search = searchOnlineImages('小叽', 'character')
+    const rejection =
+      expect(search).rejects.toThrow('Bangumi 搜索超时，请稍后重试')
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    await rejection
   })
 
   it('filters unrelated AniList popularity results for unsupported Chinese queries', async () => {

@@ -97,42 +97,46 @@ export function ImageSearchDialog({
   onCustomize,
 }: ImageSearchDialogProps) {
   const previousSession = cacheKey ? imageSearchSessions.get(cacheKey) : null
+  const restoredSession =
+    initialKind && previousSession?.kind !== initialKind
+      ? null
+      : previousSession
   const isAddSearch =
     cacheKey?.startsWith('tree-add-') || cacheKey?.startsWith('canvas-child-')
   const [query, setQuery] = useState(
-    previousSession?.query ?? (isAddSearch ? '' : initialQuery),
+    restoredSession?.query ?? (isAddSearch ? '' : initialQuery),
   )
   const [kind, setKind] = useState<OnlineImageKind>(
-    previousSession?.kind ?? initialKind ?? 'character',
+    initialKind ?? restoredSession?.kind ?? 'character',
   )
   const [provider, setProvider] = useState<OnlineImageProvider>(
-    previousSession?.provider ?? 'bangumi',
+    restoredSession?.provider ?? 'bangumi',
   )
   const [results, setResults] = useState<OnlineImageSearchResult[]>(
-    previousSession?.results ?? [],
+    restoredSession?.results ?? [],
   )
   const [visibleResultCount, setVisibleResultCount] = useState(
-    previousSession?.visibleResultCount ?? RESULT_BATCH_SIZE,
+    restoredSession?.visibleResultCount ?? RESULT_BATCH_SIZE,
   )
   const [message, setMessage] = useState(
-    previousSession?.message ??
+    restoredSession?.message ??
       '优先使用 Bangumi；没有合适结果时可改用 AniList。',
   )
   const [japaneseQuery, setJapaneseQuery] = useState(
-    previousSession?.japaneseQuery,
+    restoredSession?.japaneseQuery,
   )
   const [searchMode, setSearchMode] = useState(
-    previousSession?.searchMode ?? 'images',
+    restoredSession?.searchMode ?? 'images',
   )
   const [workResults, setWorkResults] = useState<OnlineWorkSearchResult[]>(
-    previousSession?.workResults ?? [],
+    restoredSession?.workResults ?? [],
   )
   const [selectedWork, setSelectedWork] = useState<
     OnlineWorkSearchResult | undefined
-  >(previousSession?.selectedWork)
+  >(restoredSession?.selectedWork)
   const [characterReturnState, setCharacterReturnState] = useState<
     CharacterSearchReturnState | undefined
-  >(previousSession?.characterReturnState)
+  >(restoredSession?.characterReturnState)
   const [searching, setSearching] = useState(false)
   const [showAniListFallbackNotice, setShowAniListFallbackNotice] =
     useState(false)
@@ -483,9 +487,14 @@ export function ImageSearchDialog({
   const selectResult = async (result: OnlineImageSearchResult) => {
     const key = result.provider + ':' + result.externalId
     setSelectingId(key)
-    const selected = await onSelect(result)
-    setSelectingId(null)
-    if (selected) onClose()
+    try {
+      const selected = await onSelect(result)
+      if (selected) onClose()
+    } catch (error) {
+      setMessage(userErrorMessage(error, '在线图片保存失败，请稍后重试'))
+    } finally {
+      setSelectingId(null)
+    }
   }
 
   const visibleResults = results.slice(0, visibleResultCount)
@@ -693,7 +702,7 @@ export function ImageSearchDialog({
         >
           <div className="image-search-results-flow">
             {searchMode === 'works'
-              ? visibleWorkResults.map((work) => {
+              ? visibleWorkResults.map((work, index) => {
                   const key = 'work:' + work.externalId
                   return (
                     <article
@@ -710,7 +719,8 @@ export function ImageSearchDialog({
                           crossOrigin="anonymous"
                           src={work.thumbnailUrl}
                           alt=""
-                          loading="lazy"
+                          loading={index === 0 ? 'eager' : 'lazy'}
+                          fetchPriority={index === 0 ? 'high' : 'auto'}
                         />
                         <strong>{work.name}</strong>
                         {work.alternateName ? (
@@ -726,7 +736,7 @@ export function ImageSearchDialog({
                 })
               : null}
             {searchMode !== 'works'
-              ? visibleResults.map((result) => {
+              ? visibleResults.map((result, index) => {
                   const key = result.provider + ':' + result.externalId
                   return (
                     <article
@@ -748,7 +758,8 @@ export function ImageSearchDialog({
                           crossOrigin="anonymous"
                           src={result.thumbnailUrl}
                           alt=""
-                          loading="lazy"
+                          loading={index === 0 ? 'eager' : 'lazy'}
+                          fetchPriority={index === 0 ? 'high' : 'auto'}
                         />
                         <strong>{result.name}</strong>
                         {result.alternateName &&

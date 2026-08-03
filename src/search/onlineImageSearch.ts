@@ -52,6 +52,7 @@ const BANGUMI_API_URL = 'https://api.bgm.tv'
 const SEARCH_LIMIT = 18
 const MAX_CACHE_ENTRIES = 80
 const ANILIST_DEFAULT_COOLDOWN_SECONDS = 60
+const SEARCH_REQUEST_TIMEOUT_MS = 15_000
 
 let anilistCooldownUntil = 0
 
@@ -76,16 +77,47 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
+function createTimedAbortSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+) {
+  const controller = new AbortController()
+  let timedOut = false
+  const abortFromCaller = () => controller.abort()
+  if (signal?.aborted) abortFromCaller()
+  else signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timeout = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    dispose: () => {
+      window.clearTimeout(timeout)
+      signal?.removeEventListener('abort', abortFromCaller)
+    },
+  }
+}
+
 async function fetchSearchResponse(
   input: RequestInfo | URL,
   init: RequestInit,
   unavailableMessage: string,
+  timeoutMessage: string,
 ): Promise<Response> {
+  const request = createTimedAbortSignal(
+    init.signal ?? undefined,
+    SEARCH_REQUEST_TIMEOUT_MS,
+  )
   try {
-    return await fetch(input, init)
+    return await fetch(input, { ...init, signal: request.signal })
   } catch (error) {
+    if (request.timedOut()) throw new OnlineImageSearchError(timeoutMessage)
     if (isAbortError(error)) throw error
     throw new OnlineImageSearchError(unavailableMessage)
+  } finally {
+    request.dispose()
   }
 }
 
@@ -211,6 +243,7 @@ async function searchBangumiDirect(
       signal,
     },
     '无法连接 Bangumi，请检查网络后重试',
+    'Bangumi 文字搜索超时，请稍后重试',
   )
   if (!response.ok) {
     throw new OnlineImageSearchError(
@@ -244,6 +277,7 @@ async function searchBangumiGateway(
       signal,
     },
     '无法连接 Bangumi 搜索服务，请检查网络后重试',
+    'Bangumi 搜索超时，请稍后重试或切换 AniList',
   )
   if (!response.ok) {
     throw new OnlineImageSearchError(
@@ -385,6 +419,7 @@ async function searchAniList(
       signal,
     },
     '无法连接 AniList，请检查网络后重试',
+    'AniList 搜索超时，请稍后重试',
   )
   const retryAfterSeconds = anilistCooldownSeconds(response.headers)
   if (response.status === 429) {
@@ -572,6 +607,7 @@ export async function searchBangumiWorks(
     url,
     { headers: { Accept: 'application/json' }, signal },
     '无法连接 Bangumi 作品搜索，请检查网络后重试',
+    'Bangumi 作品搜索超时，请稍后重试',
   )
   if (!response.ok) {
     throw new OnlineImageSearchError(
@@ -606,6 +642,7 @@ export async function searchBangumiSubjectCharacters(
     url,
     { headers: { Accept: 'application/json' }, signal },
     '无法读取这个作品的角色，请检查网络后重试',
+    '作品角色读取超时，请稍后重试',
   )
   if (!response.ok) {
     throw new OnlineImageSearchError(

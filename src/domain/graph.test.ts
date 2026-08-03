@@ -59,12 +59,12 @@ describe('graph document schema', () => {
     })
   })
 
-  it('defaults older schema v1 documents to the original packing layout', () => {
+  it('defaults older schema v1 documents to gravity layout', () => {
     const input = createStarterGraph('2026-07-15T00:00:00.000Z')
     const canvas = input.canvas as Partial<typeof input.canvas>
     delete canvas.layoutMode
 
-    expect(parseGraphDocument(input).canvas.layoutMode).toBe('packing')
+    expect(parseGraphDocument(input).canvas.layoutMode).toBe('gravity')
   })
 
   it('defaults older schema v1 documents to classic canvas settings', () => {

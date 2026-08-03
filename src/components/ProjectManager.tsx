@@ -38,6 +38,19 @@ function projectTime(value: string): string {
   }).format(date)
 }
 
+function projectDateTitle(value: string): string {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '本地项目'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
 function ProjectGraphThumbnail({ src }: { src?: string }) {
   return (
     <span className="project-graph-thumbnail" aria-hidden="true">
@@ -171,8 +184,8 @@ export function ProjectManager() {
   const handleDelete = async (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     if (!activeProjectId) return
-    const activeName = state.document.name.trim() || '未命名属性图'
-    if (!window.confirm('确定删除“' + activeName + '”吗？此操作不可撤销。')) {
+    const activeTitle = projectDateTitle(state.document.createdAt)
+    if (!window.confirm('确定删除“' + activeTitle + '”吗？此操作不可撤销。')) {
       return
     }
     await deleteProject(activeProjectId)
@@ -228,9 +241,13 @@ export function ProjectManager() {
           <ul className={'project-list'}>
             {projects.map((project) => {
               const active = project.id === activeProjectId
-              const name = active
-                ? state.document.name || '未命名属性图'
-                : project.name
+              const createdAt = active
+                ? state.document.createdAt
+                : project.createdAt
+              const updatedAt = active
+                ? state.document.updatedAt
+                : project.updatedAt
+              const title = projectDateTitle(createdAt)
               return (
                 <li key={project.id}>
                   <button
@@ -238,6 +255,7 @@ export function ProjectManager() {
                     className={
                       'project-list-item' + (active ? ' is-active' : '')
                     }
+                    aria-label={'打开项目 ' + title}
                     aria-current={active ? 'page' : undefined}
                     disabled={projectActionPending}
                     onClick={() => void switchProject(project.id)}
@@ -247,8 +265,8 @@ export function ProjectManager() {
                       {active ? '●' : '○'}
                     </span>
                     <span className={'project-list-copy'}>
-                      <strong>{name}</strong>
-                      <small>{projectTime(project.updatedAt)}</small>
+                      <strong>{title}</strong>
+                      <small>更新于 {projectTime(updatedAt)}</small>
                     </span>
                     {active ? <em>当前</em> : null}
                   </button>

@@ -191,20 +191,12 @@ describe('local editor flow', () => {
     )
   })
 
-  it('switches layout and changes only the preview zoom', async () => {
+  it('keeps gravity layout fixed and changes only the preview zoom', async () => {
     const user = userEvent.setup()
     renderLegacyEditorFixture()
 
     await user.click(screen.getByRole('button', { name: '外观' }))
     await user.click(screen.getByRole('tab', { name: '画布' }))
-    const gravityLayout = screen.getByRole('button', { name: '重力碰撞' })
-    expect(gravityLayout).toHaveAttribute('aria-pressed', 'true')
-    await user.click(gravityLayout)
-    expect(gravityLayout).toHaveAttribute('aria-pressed', 'false')
-    await user.click(screen.getByRole('button', { name: '数据' }))
-    expect(screen.getByLabelText('数据编辑面板')).toHaveTextContent(
-      '已启用基础聚合布局',
-    )
 
     const fit = screen.getByRole('button', { name: '适应画布' })
     expect(fit).toHaveTextContent('100%')
@@ -283,7 +275,7 @@ describe('local editor flow', () => {
     expect(screen.getByText('60%')).toBeInTheDocument()
   })
 
-  it('switches the compact appearance sections without adding main tools', async () => {
+  it('switches the compact appearance sections without adding panel tools', async () => {
     const user = userEvent.setup()
     renderLegacyEditorFixture()
 
@@ -299,8 +291,16 @@ describe('local editor flow', () => {
     expect(screen.getByText('列表从上到下对应画布从前到后')).toBeVisible()
     await user.click(screen.getByRole('tab', { name: '画布' }))
     expect(screen.getByText('画布比例')).toBeVisible()
-    expect(within(toolRail).getAllByRole('button')).toHaveLength(4)
+    expect(within(toolRail).getAllByRole('button')).toHaveLength(5)
     expect(toolRail.querySelectorAll('.editor-panel-icon')).toHaveLength(4)
+    await user.click(
+      within(toolRail).getByRole('button', { name: '打开关于菜单' }),
+    )
+    expect(
+      within(toolRail).getByRole('menu', { name: '关于' }),
+    ).toHaveTextContent('加入社群')
+    await user.click(screen.getByRole('img', { name: /属性图预览/ }))
+    expect(screen.queryByRole('menu', { name: '关于' })).not.toBeInTheDocument()
     expect(
       within(screen.getByRole('tablist', { name: '编辑面板' })).getAllByRole(
         'tab',
@@ -477,7 +477,7 @@ describe('local editor flow', () => {
     const globalSettings = screen.getByLabelText('全局标签设置')
     expect(globalSettings).toBeInTheDocument()
 
-    const categoryDisplay = screen.getByRole('button', {
+    const categoryDisplay = within(globalSettings).getByRole('button', {
       name: '分类显示',
     })
     expect(categoryDisplay).toHaveAttribute('aria-pressed', 'true')
@@ -498,12 +498,19 @@ describe('local editor flow', () => {
     expect(
       screen.queryByRole('slider', { name: '字重' }),
     ).not.toBeInTheDocument()
-    const categoryText = screen.getByRole('button', {
+    const categoryText = within(globalSettings).getByRole('button', {
       name: '分类文字',
     })
     expect(categoryText).toHaveAttribute('aria-pressed', 'true')
     await user.click(categoryText)
     expect(categoryText).toHaveAttribute('aria-pressed', 'false')
+
+    const labelText = within(globalSettings).getByRole('button', {
+      name: '标签文字',
+    })
+    expect(labelText).toHaveAttribute('aria-pressed', 'false')
+    await user.click(labelText)
+    expect(labelText).toHaveAttribute('aria-pressed', 'true')
 
     const categoryStroke = screen.getByRole('slider', {
       name: '分类描边',
@@ -523,6 +530,7 @@ describe('local editor flow', () => {
       within(globalSettings).getByRole('button', { name: '重置' }),
     )
     expect(categoryText).toHaveAttribute('aria-pressed', 'true')
+    expect(labelText).toHaveAttribute('aria-pressed', 'false')
     expect(categoryStroke).toHaveValue('2')
     expect(color).toBeEnabled()
     expect(color).toHaveValue('#000000')
@@ -531,6 +539,30 @@ describe('local editor flow', () => {
 
     await user.click(screen.getByRole('button', { name: '数据' }))
     expect(screen.queryByLabelText('名称')).not.toBeInTheDocument()
+  })
+
+  it('provides desktop canvas shortcuts for visible graph content', async () => {
+    const user = userEvent.setup()
+    renderLegacyEditorFixture()
+
+    const shortcuts = screen.getByLabelText('画布显示内容')
+    const categoryDisplay = within(shortcuts).getByRole('button', {
+      name: /分类显示/,
+    })
+    expect(categoryDisplay).toHaveAttribute('aria-pressed', 'true')
+    await user.click(categoryDisplay)
+    expect(categoryDisplay).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(
+      within(shortcuts).getByRole('button', { name: '展开显示内容' }),
+    )
+    const menu = within(shortcuts).getByRole('menu')
+    const labelText = within(menu).getByRole('menuitemcheckbox', {
+      name: '标签文字',
+    })
+    expect(labelText).toHaveAttribute('aria-checked', 'false')
+    await user.click(labelText)
+    expect(labelText).toHaveAttribute('aria-checked', 'true')
   })
 
   it('renames a tree node when its name is double clicked', async () => {
@@ -609,14 +641,10 @@ describe('local editor flow', () => {
 
     render(<App repository={repository} autosaveDelayMs={5} />)
 
-    const projectName = await screen.findByRole('textbox', {
-      name: '项目名称',
-    })
-    expect(projectName).toHaveValue('已恢复项目')
     expect(saveProject).not.toHaveBeenCalled()
 
-    fireEvent.change(projectName, {
-      target: { value: '自动保存项目' },
+    fireEvent.change(screen.getByRole('slider', { name: '动画 权重' }), {
+      target: { value: '50' },
     })
 
     await waitFor(
@@ -626,7 +654,7 @@ describe('local editor flow', () => {
       { timeout: 2000 },
     )
     const lastSnapshot = saveProject.mock.calls.at(-1)?.[1]
-    expect(lastSnapshot?.document.name).toBe('自动保存项目')
+    expect(lastSnapshot?.document.categories[0]?.value).toBe(50)
     await waitFor(() => {
       expect(screen.getAllByText(/^已保存/).length).toBeGreaterThan(0)
     })
@@ -687,6 +715,7 @@ describe('local editor flow', () => {
   })
 
   it('retries a failed local save from the visible status control', async () => {
+    const user = userEvent.setup()
     const restoredDocument = createStarterGraph('2026-07-16T00:00:00.000Z')
     const saveProject = vi
       .fn()
@@ -717,15 +746,15 @@ describe('local editor flow', () => {
     }
 
     render(<App repository={repository} autosaveDelayMs={5} />)
-    const projectName = await screen.findByRole('textbox', {
-      name: '项目名称',
+    await screen.findByText('已恢复本地项目')
+    fireEvent.change(screen.getAllByRole('slider')[0]!, {
+      target: { value: '50' },
     })
-    fireEvent.change(projectName, { target: { value: '等待重试' } })
 
     const retryButtons = await screen.findAllByRole('button', {
       name: '保存失败，点击重试保存',
     })
-    fireEvent.click(retryButtons[0]!)
+    await user.click(retryButtons[0]!)
 
     await waitFor(() => expect(saveProject).toHaveBeenCalledTimes(2))
     await waitFor(() => {
@@ -741,17 +770,17 @@ describe('local editor flow', () => {
     const user = userEvent.setup()
     renderLegacyEditorFixture()
 
-    const projectName = screen.getByRole('textbox', { name: '项目名称' })
+    const weight = screen.getByRole('slider', { name: '叙事氛围 权重' })
     const undo = screen.getByRole('button', { name: '撤销' })
     const redo = screen.getByRole('button', { name: '重做' })
     expect(undo).toBeDisabled()
     expect(redo).toBeDisabled()
 
-    fireEvent.change(projectName, { target: { value: '历史项目' } })
+    fireEvent.change(weight, { target: { value: '65' } })
     expect(undo).toBeEnabled()
 
     await user.click(undo)
-    expect(projectName).toHaveValue('我的 ACG DNA')
+    expect(weight).toHaveValue('86')
     expect(redo).toBeEnabled()
 
     fireEvent.keyDown(window, {
@@ -759,12 +788,12 @@ describe('local editor flow', () => {
       ctrlKey: true,
       shiftKey: true,
     })
-    expect(projectName).toHaveValue('历史项目')
+    expect(weight).toHaveValue('65')
 
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
-    expect(projectName).toHaveValue('我的 ACG DNA')
+    expect(weight).toHaveValue('86')
 
     fireEvent.keyDown(window, { key: 'y', ctrlKey: true })
-    expect(projectName).toHaveValue('历史项目')
+    expect(weight).toHaveValue('65')
   })
 })

@@ -41,6 +41,7 @@ import { userErrorMessage } from '../errors/userErrorMessage'
 import imageIconUrl from '../assets/image.svg'
 import {
   computeCanvasNodeActionGeometry,
+  resolveCanvasNodeActionCenterAngle,
   type CanvasNodeActionRequest,
 } from './canvasNodeActions'
 import {
@@ -408,8 +409,21 @@ export function GraphCanvas({
     nodeActionMenuId && state.selectedNodeId === nodeActionMenuId
       ? layout.flatNodes.find((node) => node.id === nodeActionMenuId)
       : undefined
+  const nodeActionCenterAngle = (() => {
+    if (!selectedLayoutNode) return -45
+    return resolveCanvasNodeActionCenterAngle(
+      {
+        nodeX: selectedLayoutNode.x * displayScale,
+        nodeY: selectedLayoutNode.y * displayScale,
+        width: displayWidth,
+        height: displayHeight,
+      },
+      window.innerWidth < 900,
+    )
+  })()
   const nodeActionGeometry = computeCanvasNodeActionGeometry(
     selectedLayoutNode ? selectedLayoutNode.radius * displayScale : 0,
+    nodeActionCenterAngle,
   )
   const nodeActionMenuStyle = selectedLayoutNode
     ? ({

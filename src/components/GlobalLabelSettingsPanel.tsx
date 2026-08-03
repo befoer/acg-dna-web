@@ -185,25 +185,6 @@ export function GlobalLabelSettingsPanel({
               {option.label}
             </button>
           ))}
-          <button
-            type={'button'}
-            className={
-              state.document.canvas.layoutMode === 'gravity' ? 'is-active' : ''
-            }
-            aria-pressed={state.document.canvas.layoutMode === 'gravity'}
-            onClick={() =>
-              dispatch({
-                type: 'layout-mode-changed',
-                mode:
-                  state.document.canvas.layoutMode === 'gravity'
-                    ? 'packing'
-                    : 'gravity',
-                at: new Date().toISOString(),
-              })
-            }
-          >
-            重力碰撞
-          </button>
         </div>
       </section>
 

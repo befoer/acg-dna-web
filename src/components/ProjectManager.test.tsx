@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -116,19 +116,12 @@ describe('project manager flow', () => {
     )
     render(<App repository={repository} autosaveDelayMs={60_000} />)
 
-    const nameInput = await screen.findByRole('textbox', {
-      name: '项目名称',
-    })
-    expect(nameInput).toHaveValue('项目一')
-    fireEvent.change(nameInput, { target: { value: '项目一已修改' } })
-
     await user.click(screen.getByRole('button', { name: '项目' }))
-    await user.click(screen.getByRole('button', { name: /项目二/ }))
+    expect(screen.queryByText('项目一')).not.toBeInTheDocument()
+    expect(screen.queryByText('项目二')).not.toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: /打开项目/ })[0]!)
 
-    await waitFor(() => expect(nameInput).toHaveValue('项目二'))
-    expect(repository.snapshots.get('graph-first')?.document.name).toBe(
-      '项目一已修改',
-    )
+    await waitFor(() => expect(repository.activeProjectId).toBe('graph-second'))
     expect(repository.activeProjectId).toBe('graph-second')
   })
 
@@ -146,18 +139,15 @@ describe('project manager flow', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App repository={repository} />)
 
-    const nameInput = await screen.findByRole('textbox', {
-      name: '项目名称',
-    })
     await user.click(screen.getByRole('button', { name: '项目' }))
     await user.click(screen.getByRole('button', { name: '⧉ 复制' }))
 
-    await waitFor(() => expect(nameInput).toHaveValue('原项目 副本'))
+    await waitFor(() => expect(repository.snapshots.size).toBe(2))
     expect(repository.snapshots.size).toBe(2)
     expect(repository.activeProjectId).not.toBe('graph-original')
 
     await user.click(screen.getByRole('button', { name: '删除当前项目' }))
-    await waitFor(() => expect(nameInput).toHaveValue('原项目'))
+    await waitFor(() => expect(repository.snapshots.size).toBe(1))
     expect(repository.snapshots.size).toBe(1)
     expect(repository.activeProjectId).toBe('graph-original')
   })
@@ -175,13 +165,10 @@ describe('project manager flow', () => {
     )
     render(<App repository={repository} />)
 
-    const nameInput = await screen.findByRole('textbox', {
-      name: '项目名称',
-    })
     await user.click(screen.getByRole('button', { name: '项目' }))
     await user.click(screen.getByRole('button', { name: '＋ 新建' }))
 
-    await waitFor(() => expect(nameInput).toHaveValue('未命名属性图'))
+    await waitFor(() => expect(repository.snapshots.size).toBe(2))
     expect(repository.snapshots.size).toBe(2)
     expect(repository.activeProjectId).not.toBe('graph-existing')
   })
@@ -205,16 +192,15 @@ describe('project manager flow', () => {
     )
     render(<App repository={repository} />)
 
-    const nameInput = await screen.findByRole('textbox', {
-      name: '项目名称',
-    })
     await user.click(screen.getByRole('button', { name: '项目' }))
     await user.upload(
       screen.getByLabelText('选择 ACG DNA 项目文件'),
       projectFile(serialized),
     )
 
-    await waitFor(() => expect(nameInput).toHaveValue('导入项目'))
+    await waitFor(() =>
+      expect(repository.activeProjectId).not.toBe('graph-current'),
+    )
     expect(repository.snapshots.size).toBe(2)
     const importedProjectId = repository.activeProjectId
     expect(importedProjectId).not.toBe('graph-imported-source')
@@ -230,7 +216,6 @@ describe('project manager flow', () => {
         '项目文件不是有效的 JSON',
       ),
     )
-    expect(nameInput).toHaveValue('导入项目')
     expect(repository.activeProjectId).toBe(importedProjectId)
     expect(repository.snapshots.size).toBe(2)
   })

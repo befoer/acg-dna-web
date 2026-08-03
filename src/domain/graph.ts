@@ -265,7 +265,7 @@ export interface GraphLabelSettings {
 export const DEFAULT_LABEL_SETTINGS: GraphLabelSettings = {
   showCategoryNodes: true,
   showCategoryText: true,
-  showLabelText: true,
+  showLabelText: false,
   showImages: true,
   categoryStrokeWidth: 2,
   labelStrokeWidth: 1,
@@ -1132,7 +1132,7 @@ function readProfileSettings(
 function readLayoutMode(record: UnknownRecord): GraphLayoutMode {
   const value = record.layoutMode
   if (value === undefined) {
-    return 'packing'
+    return 'gravity'
   }
   if (value !== 'packing' && value !== 'gravity') {
     throw new GraphValidationError(

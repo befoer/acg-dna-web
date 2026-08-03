@@ -199,15 +199,16 @@ function nodeFontSize(node: LayoutNode): number {
     return Math.max(22, Math.min(42, node.radius * 0.13))
   }
   if (node.kind === 'attribute') {
-    return Math.max(18, Math.min(32, node.radius * 0.16))
+    return Math.max(19, Math.min(35, node.radius * 0.175))
   }
-  return Math.max(15, Math.min(28, node.radius * 0.3))
+  return Math.max(16, Math.min(31, node.radius * 0.33))
 }
 
 function drawNodeLabel(
   context: CanvasRenderingContext2D,
   node: LayoutNode,
   settings: GraphLabelSettings,
+  isOverImage = false,
 ): void {
   const fontSize = nodeFontSize(node)
   const isContainer =
@@ -215,7 +216,9 @@ function drawNodeLabel(
     (node.kind === 'category' || node.kind === 'attribute')
   const textColor = isContainer
     ? (settings.colorOverride ?? node.color)
-    : (settings.textColorOverride ?? '#242429')
+    : isOverImage
+      ? (settings.textColorOverride ?? '#FFFFFF')
+      : (settings.textColorOverride ?? '#242429')
   const fontFamily = getGraphFontCssFamily(settings)
   const maxWidth = Math.max(30, node.radius * 1.48)
   context.save()
@@ -223,6 +226,13 @@ function drawNodeLabel(
   context.textBaseline = 'middle'
   context.fillStyle = textColor
   context.font = `${settings.fontWeight} ${fontSize}px ${fontFamily}`
+  if (isOverImage) {
+    const shadowOffset = Math.max(1.5, fontSize * 0.065)
+    context.shadowColor = hexToRgba(settings.colorOverride ?? node.color, 0.98)
+    context.shadowOffsetX = shadowOffset
+    context.shadowOffsetY = shadowOffset
+    context.shadowBlur = Math.max(3.5, fontSize * 0.15)
+  }
   if (isContainer) {
     context.fillText(node.name || '未命名', node.x, node.y - node.radius)
     context.restore()
@@ -311,7 +321,10 @@ function drawNode(
     node.kind === 'category'
       ? settings.showCategoryText
       : settings.showLabelText
-  const shouldDrawLabel = showText && drawNodeText && !renderedAsset
+  // Matches the APP behavior: labels without a rendered image always retain a
+  // readable name, while the image overlay remains controlled by showLabelText.
+  const shouldDrawLabel =
+    drawNodeText && (showText || (!isContainer && !renderedAsset))
   const fillAlpha = getGraphTemplate(document.canvas.templateId).labelFillAlpha
   const strokeAlpha = isContainer ? 0.7 : 1
   const strokeWidth =
@@ -340,6 +353,12 @@ function drawNode(
       node.radius * 2,
       node.imageTransform,
     )
+    if (shouldDrawLabel) {
+      context.beginPath()
+      context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+      context.fillStyle = hexToRgba(color, 0.32)
+      context.fill()
+    }
     if (settings.imageMask !== 'none' && settings.imageMaskOpacity > 0) {
       const maskColor =
         settings.imageMask === 'black'
@@ -381,7 +400,7 @@ function drawNode(
     ),
   )
   if (shouldDrawLabel) {
-    drawNodeLabel(context, node, settings)
+    drawNodeLabel(context, node, settings, Boolean(renderedAsset))
   }
 
   if (node.id === selectedNodeId) {

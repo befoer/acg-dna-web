@@ -390,6 +390,11 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
     ? findGraphNode(state.document, imageTargetId)
     : undefined
   const imageTargetNode = imageTargetMatch?.node
+  const imageTargetCategory = imageTargetMatch
+    ? state.document.categories.find(
+        (category) => category.id === imageTargetMatch.categoryId,
+      )
+    : undefined
   const treeImageEditorAsset = treeImageEditorAssetId
     ? state.assets[treeImageEditorAssetId]
     : undefined
@@ -596,7 +601,10 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
           initialQuery={
             imageTargetNode?.name ?? treeAddTarget?.parentName ?? ''
           }
-          initialKind={treeAddTarget?.initialKind}
+          initialKind={
+            categorySearchKind(imageTargetCategory?.name ?? '') ??
+            treeAddTarget?.initialKind
+          }
           onClose={() => {
             setShowTreeImageSearch(false)
             setTreeAddTarget(null)
@@ -628,9 +636,14 @@ function GraphTree({ onOpenCategoryAppearance }: GraphTreeProps) {
             setTreeAddTarget(null)
             await waitForTreeNode()
             const assetId = await attachOnlineImage(node.id, result)
-            if (!assetId) return false
+            if (!assetId) {
+              removeNode(node.id)
+              return false
+            }
             dispatch({ type: 'node-selected', nodeId: node.id })
-            return true
+            // The dialog was closed before the Blob download began. Returning
+            // false prevents this stale selection from closing a newer dialog.
+            return false
           }}
         />
       ) : null}
@@ -756,7 +769,8 @@ function SelectedNodeEditor({
   canvasNodeAction,
   onCanvasNodeActionHandled,
 }: SelectedNodeEditorProps) {
-  const { state, dispatch, attachImage, attachOnlineImage } = useEditor()
+  const { state, dispatch, attachImage, attachOnlineImage, removeNode } =
+    useEditor()
   const match = selectedNode(state)
   const asset = match?.node.imageAssetId
     ? state.assets[match.node.imageAssetId]
@@ -992,6 +1006,7 @@ function SelectedNodeEditor({
         <ImageSearchDialog
           cacheKey={node.id}
           initialQuery={node.name}
+          initialKind={categorySearchKind(category?.name ?? '')}
           onClose={() => setShowImageSearch(false)}
           onCustomize={() => {
             setShowImageSearch(false)
@@ -1039,9 +1054,13 @@ function SelectedNodeEditor({
             setCanvasChildTarget(null)
             await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
             const assetId = await attachOnlineImage(child.id, result)
-            if (!assetId) return false
+            if (!assetId) {
+              removeNode(child.id)
+              return false
+            }
             dispatch({ type: 'node-selected', nodeId: child.id })
-            return true
+            // The child-search dialog has already been closed above.
+            return false
           }}
         />
       ) : null}
@@ -1088,14 +1107,14 @@ export function EditorPanel({
   const [showGlobalLabelSettings, setShowGlobalLabelSettings] = useState(false)
   const [showTextImport, setShowTextImport] = useState(false)
   const [showTextExport, setShowTextExport] = useState(false)
-  const flatImportTargets: GraphTextFlatTarget[] =
-    state.document.categories.flatMap((category) => [
-      {
-        id: category.id,
-        kind: 'category' as const,
-        label: (category.name || '未命名分类') + '（一级标签）',
-      },
-      ...category.attributes.map((attribute) => ({
+  const flatImportTargets: GraphTextFlatTarget[] = [
+    ...state.document.categories.map((category) => ({
+      id: category.id,
+      kind: 'category' as const,
+      label: (category.name || '未命名分类') + '（一级标签）',
+    })),
+    ...state.document.categories.flatMap((category) =>
+      category.attributes.map((attribute) => ({
         id: attribute.id,
         kind: 'attribute' as const,
         label:
@@ -1104,7 +1123,8 @@ export function EditorPanel({
           (attribute.name || '未命名属性') +
           '（二级标签）',
       })),
-    ])
+    ),
+  ]
 
   if (showGlobalLabelSettings) {
     return (

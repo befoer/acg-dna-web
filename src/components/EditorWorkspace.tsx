@@ -103,7 +103,14 @@ function HistoryControls({
         disabled={!canUndo}
         onClick={onUndo}
       >
-        <span aria-hidden={true}>↶</span>
+        <svg
+          className={'history-icon'}
+          viewBox={'0 0 24 24'}
+          aria-hidden={true}
+        >
+          <path d={'M9 7 4 12l5 5'} />
+          <path d={'M5 12h9a5 5 0 0 1 5 5'} />
+        </svg>
       </button>
       <button
         type={'button'}
@@ -113,7 +120,14 @@ function HistoryControls({
         disabled={!canRedo}
         onClick={onRedo}
       >
-        <span aria-hidden={true}>↷</span>
+        <svg
+          className={'history-icon'}
+          viewBox={'0 0 24 24'}
+          aria-hidden={true}
+        >
+          <path d={'m15 7 5 5-5 5'} />
+          <path d={'M19 12h-9a5 5 0 0 0-5 5'} />
+        </svg>
       </button>
     </div>
   )
@@ -163,6 +177,15 @@ function DownloadIcon() {
   )
 }
 
+function AboutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10.5v5.4M12 7.6v.2" />
+    </svg>
+  )
+}
+
 export function EditorWorkspace() {
   const { state, dispatch, removeNode, retrySave } = useEditor()
   const [isExporting, setIsExporting] = useState(false)
@@ -174,6 +197,10 @@ export function EditorWorkspace() {
   > | null>(null)
   const [activePanel, setActivePanel] = useState<EditorPanelId>('data')
   const [mobilePanelCollapsed, setMobilePanelCollapsed] = useState(false)
+  const [showProjectLinks, setShowProjectLinks] = useState(false)
+  const projectLinksRef = useRef<HTMLDivElement>(null)
+  const [showCanvasDisplayMenu, setShowCanvasDisplayMenu] = useState(false)
+  const canvasDisplayControlsRef = useRef<HTMLDivElement>(null)
   const [contentBoundsEditing, setContentBoundsEditing] = useState(false)
   const [canvasNodeAction, setCanvasNodeAction] =
     useState<CanvasNodeActionRequest | null>(null)
@@ -184,6 +211,7 @@ export function EditorWorkspace() {
     EDITOR_PANELS.find((panel) => panel.id === activePanel)?.label ?? '数据'
   const isCanvasSizeLocked = state.document.canvas.templateId !== 'custom'
   const selectPanel = (panelId: EditorPanelId): void => {
+    setShowProjectLinks(false)
     setActivePanel(panelId)
     setMobilePanelCollapsed(false)
     if (panelId !== 'appearance') setContentBoundsEditing(false)
@@ -238,6 +266,37 @@ export function EditorWorkspace() {
     [],
   )
 
+  useEffect(() => {
+    if (!showProjectLinks) return
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        target instanceof Node &&
+        !projectLinksRef.current?.contains(target)
+      ) {
+        setShowProjectLinks(false)
+      }
+    }
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () =>
+      document.removeEventListener('pointerdown', handleOutsidePointerDown)
+  }, [showProjectLinks])
+
+  useEffect(() => {
+    if (!showCanvasDisplayMenu) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !canvasDisplayControlsRef.current?.contains(event.target)
+      ) {
+        setShowCanvasDisplayMenu(false)
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    return () =>
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+  }, [showCanvasDisplayMenu])
+
   const openCanvasSizeSettings = () => {
     if (!isCanvasSizeLocked) {
       setActivePanel('appearance')
@@ -252,6 +311,18 @@ export function EditorWorkspace() {
       setCanvasSizeLockNotice(false)
       canvasSizeLockNoticeTimeout.current = null
     }, 2000)
+  }
+
+  const toggleCanvasDisplaySetting = (
+    key:
+      'showCategoryNodes' | 'showCategoryText' | 'showLabelText' | 'showImages',
+  ) => {
+    const labelSettings = state.document.canvas.labelSettings
+    dispatch({
+      type: 'label-settings-changed',
+      patch: { [key]: !labelSettings[key] },
+      at: new Date().toISOString(),
+    })
   }
 
   const exportPng = async () => {
@@ -281,30 +352,6 @@ export function EditorWorkspace() {
         </a>
 
         <ProjectManager />
-
-        <label className="project-name-field">
-          <span className="sr-only">项目名称</span>
-          <input
-            value={state.document.name}
-            maxLength={48}
-            onChange={(event) =>
-              dispatch({
-                type: 'document-renamed',
-                name: event.currentTarget.value,
-                at: new Date().toISOString(),
-              })
-            }
-            onBlur={(event) => {
-              if (!event.currentTarget.value.trim()) {
-                dispatch({
-                  type: 'document-renamed',
-                  name: '未命名属性图',
-                  at: new Date().toISOString(),
-                })
-              }
-            }}
-          />
-        </label>
 
         <HistoryControls
           canUndo={canUndo}
@@ -353,6 +400,57 @@ export function EditorWorkspace() {
               </button>
             )
           })}
+          <div className="tool-project-links" ref={projectLinksRef}>
+            {showProjectLinks ? (
+              <div
+                id="project-links-menu"
+                className="tool-project-menu"
+                role="menu"
+                aria-label="关于"
+              >
+                <a href="/" role="menuitem">
+                  返回主页
+                </a>
+                <a
+                  href="https://space.bilibili.com/10761692"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  role="menuitem"
+                >
+                  开发者：烧猫定食
+                </a>
+                <a
+                  href="https://github.com/befoer/acg-dna-web"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  role="menuitem"
+                >
+                  项目 GitHub
+                </a>
+                <a
+                  href={
+                    'https://qm.qq.com/cgi-bin/qm/qr?k=kXDxk4FG-RAlcrdV2A4eD0muTHJZMtIL&jump_from=webapi&authKey=Hf79u%2BeHTTKB1gi%2FvYHHsBRDSzAbWd389leYFKJ%2B3Q%2FhfWMtaw8N9hH3g4Ve%2B%2F9W'
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  role="menuitem"
+                >
+                  加入社群
+                </a>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="tool-project-menu-trigger"
+              aria-label="打开关于菜单"
+              aria-expanded={showProjectLinks}
+              aria-controls="project-links-menu"
+              title="关于"
+              onClick={() => setShowProjectLinks((current) => !current)}
+            >
+              <AboutIcon />
+            </button>
+          </div>
         </nav>
 
         <section
@@ -390,6 +488,63 @@ export function EditorWorkspace() {
         <section className="canvas-stage" aria-label="画布预览">
           <div className="canvas-stage-header">
             <div className="canvas-stage-actions">
+              <div
+                className="canvas-display-controls"
+                ref={canvasDisplayControlsRef}
+                aria-label="画布显示内容"
+              >
+                <button
+                  type="button"
+                  className="canvas-display-primary"
+                  aria-pressed={
+                    state.document.canvas.labelSettings.showCategoryNodes
+                  }
+                  onClick={() =>
+                    toggleCanvasDisplaySetting('showCategoryNodes')
+                  }
+                >
+                  分类显示
+                </button>
+                <button
+                  type="button"
+                  className="canvas-display-more-trigger"
+                  aria-label="展开显示内容"
+                  aria-expanded={showCanvasDisplayMenu}
+                  onClick={() =>
+                    setShowCanvasDisplayMenu((current) => !current)
+                  }
+                >
+                  <svg viewBox="0 0 8 8" aria-hidden="true">
+                    <path d="m1.2 2.1 2.8 2.8 2.8-2.8" />
+                  </svg>
+                </button>
+                {showCanvasDisplayMenu ? (
+                  <div className="canvas-display-more-menu" role="menu">
+                    {[
+                      ['showCategoryText', '分类文字'],
+                      ['showLabelText', '标签文字'],
+                      ['showImages', '标签图片'],
+                    ].map(([key, label]) => {
+                      const settingKey = key as
+                        'showCategoryText' | 'showLabelText' | 'showImages'
+                      const checked =
+                        state.document.canvas.labelSettings[settingKey]
+                      return (
+                        <button
+                          type="button"
+                          key={settingKey}
+                          role="menuitemcheckbox"
+                          aria-checked={checked}
+                          onClick={() => toggleCanvasDisplaySetting(settingKey)}
+                        >
+                          <span>{label}</span>
+                          <i aria-hidden="true">{checked ? '●' : ''}</i>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
               <div className="zoom-controls" aria-label="画布缩放">
                 <button
                   type="button"
@@ -476,6 +631,7 @@ export function EditorWorkspace() {
                 return
               }
               setActivePanel('data')
+              setMobilePanelCollapsed(false)
               setCanvasNodeAction(request)
             }}
           />

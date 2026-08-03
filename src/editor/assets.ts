@@ -2,6 +2,7 @@ import { createEntityId } from '../domain/graph'
 import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 
 export const MAX_LOCAL_IMAGE_BYTES = 15 * 1024 * 1024
+const ONLINE_IMAGE_DOWNLOAD_TIMEOUT_MS = 20_000
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   'image/avif',
@@ -125,6 +126,33 @@ export class LocalImageError extends Error {
   }
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function createTimedAbortSignal(
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+) {
+  const controller = new AbortController()
+  let timedOut = false
+  const abortFromCaller = () => controller.abort()
+  if (signal?.aborted) abortFromCaller()
+  else signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timeout = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    dispose: () => {
+      window.clearTimeout(timeout)
+      signal?.removeEventListener('abort', abortFromCaller)
+    },
+  }
+}
+
 function decodeImage(objectUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image()
@@ -175,22 +203,37 @@ export async function loadOnlineImageAsset(
   searchSeed?: OnlineImageSearchResult,
 ): Promise<LocalImageAsset> {
   let response: Response
+  let blob: Blob
+  const request = createTimedAbortSignal(
+    signal,
+    ONLINE_IMAGE_DOWNLOAD_TIMEOUT_MS,
+  )
   try {
     response = await fetch(result.downloadUrl, {
       headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg' },
       cache: 'no-store',
       referrerPolicy: 'no-referrer',
-      signal,
+      signal: request.signal,
     })
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new LocalImageError('在线图片请求过于频繁，请稍后重试')
+      }
+      if (response.status === 504) {
+        throw new LocalImageError('在线图片下载超时，请稍后重试')
+      }
+      throw new LocalImageError('在线图片下载失败（' + response.status + '）')
+    }
+    blob = await response.blob()
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError')
-      throw error
+    if (request.timedOut()) {
+      throw new LocalImageError('在线图片下载超时，请稍后重试')
+    }
+    if (error instanceof LocalImageError || isAbortError(error)) throw error
     throw new LocalImageError('无法下载所选在线图片')
+  } finally {
+    request.dispose()
   }
-  if (!response.ok) {
-    throw new LocalImageError('在线图片下载失败（' + response.status + '）')
-  }
-  const blob = await response.blob()
   const mimeType = blob.type.split(';')[0]?.trim().toLowerCase() || ''
   if (!isAcceptedLocalImageMimeType(mimeType)) {
     throw new LocalImageError('在线图片返回了不支持的格式')

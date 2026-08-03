@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { computeCanvasNodeActionGeometry } from './canvasNodeActions'
+import {
+  computeCanvasNodeActionGeometry,
+  resolveCanvasNodeActionCenterAngle,
+} from './canvasNodeActions'
 
 function distanceBetween(
   radius: number,
@@ -42,5 +45,21 @@ describe('canvas node action geometry', () => {
     )
     expect(small.angles[1]).toBe(-45)
     expect(large.angles[1]).toBe(-45)
+  })
+
+  it('keeps the desktop action direction and redirects mobile menus away from edges', () => {
+    const center = {
+      nodeX: 200,
+      nodeY: 200,
+      width: 400,
+      height: 400,
+    }
+    expect(resolveCanvasNodeActionCenterAngle(center, false)).toBe(-45)
+    expect(
+      resolveCanvasNodeActionCenterAngle({ ...center, nodeX: 380 }, true),
+    ).toBe(-135)
+    expect(
+      resolveCanvasNodeActionCenterAngle({ ...center, nodeY: 20 }, true),
+    ).toBe(45)
   })
 })
