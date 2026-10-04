@@ -1,0 +1,243 @@
+{
+  "_说明": "资料页子模板配置文件",
+  "_字段说明": {
+    "_模板级别": {
+      "avatarX": "头像X位置（相对画布 0-1）",
+      "avatarY": "头像Y位置（相对画布 0-1）",
+      "zeroLabelAvatarY": "0标签时头像Y位置（相对画布 0-1）",
+      "avatarSize": "头像大小（相对画布宽度 0-1）",
+      "avatarFrameOffsetX": "头像边框X偏移（相对画布宽度，正=右移，负=左移）",
+      "avatarFrameOffsetY": "头像边框Y偏移（相对画布高度，正=下移，负=上移）"
+    },
+    "_标签级别": {
+      "type": "标签类型（name/昵称=昵称，标签1/label1=第1个标签）",
+      "x": "文字X位置（相对画布 0-1）",
+      "y": "文字Y位置（相对画布 0-1）",
+      "zeroLabelY": "0标签时文字Y位置（相对画布 0-1）",
+      "backgroundImage": "背景图文件名",
+      "bgScale": "背景图缩放（0.5=半大, 1.0=原始, 2.0=2倍大）",
+      "bgOffsetX": "背景图X偏移（相对画布宽度，正=右移，负=左移）",
+      "bgOffsetY": "背景图Y偏移（相对画布高度，正=下移，负=上移）",
+      "textColor": "文字颜色（#RRGGBB）",
+      "fontSize": "字体大小（会根据画布缩放）",
+      "rotation": "旋转角度（度，正=顺时针）",
+      "strokeColor": "内层描边颜色",
+      "strokeWidth": "内层描边粗细",
+      "stroke2Color": "外层描边颜色（在最外面）",
+      "stroke2Width": "外层描边粗细",
+      "fontFamily": "字体名（不含.ttf，需在 assets/fonts 放置）",
+      "useCommonStyle": "是否继承 commonLabelStyle 样式"
+    }
+  },
+
+  "templates": [
+    {
+      "id": "cute_pink_1",
+      "name": "可爱日记1",
+      "parentTemplateId": "cute_pink",
+      "previewImage": "preview_cute_pink_1.webp",
+      "avatarFrameMale": "avatar_frame_male.png",
+      "avatarFrameFemale": "avatar_frame_female.png",
+      "avatarFrameNone": "avatar_frame_none.png",
+      "avatarX": 0.1,
+      "avatarY": 0.081,
+      "zeroLabelAvatarY": 0.103,
+      "avatarSize": 0.1,
+      "avatarFrameOffsetX": -0.004,
+      "avatarFrameOffsetY": 0.005,
+      "avatarFrameScale": 1.25,
+      "avatarFrameDrawOrder": "above",
+      "avatarShape": "circle",
+
+      "commonLabelStyle": {
+        "backgroundImage": "label_bg.png",
+        "bgScale": 0.7,
+        "bgOffsetX": -0.018,
+        "bgOffsetY": 0.00075,
+        "textColor": "#FFFFFF",
+        "fontSize": 12,
+        "textOffsetX": 0.006,
+        "textOffsetY": -0.001,
+        "rotation": -2,
+        "strokeColor": "#ccb3b6",
+        "strokeWidth": 2,
+        "fontFamily": "资源圆体 Bold"
+      },
+
+      "labelSlots": [
+        {
+          "type": "name",
+          "x": 0.22,
+          "y": 0.084,
+          "zeroLabelY": 0.106,
+          "rotation": -2,
+          "backgroundImage": "nickname_deco.png",
+          "bgScale": 0.94,
+          "bgAnchor": "left",
+          "bgOffsetX": -0.015,
+          "bgOffsetY": 0.0035,
+          "textColor": "#a68d8f",
+          "fontSize": 24,
+          "strokeColor": "#fffcfd",
+          "strokeWidth": 3,
+          "stroke2Color": "#d7c3c5",
+          "stroke2Width": 4,
+          "fontFamily": "资源圆体 Bold",
+          "shadowDistance": 3,
+          "shadowColor": "#f9d6cb",
+          "shadowAlpha": 0.37,
+          "shadowExpand": 4
+        },
+        {
+          "type": "标签1",
+          "x": 0.12,
+          "y": 0.1583,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签2",
+          "x": 0.231,
+          "y": 0.1552,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签3",
+          "x": 0.342,
+          "y": 0.1521,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签4",
+          "x": 0.453,
+          "y": 0.149,
+          "useCommonStyle": true
+        }
+      ],
+      "textSlots": [
+        {
+          "id": "text_block_1",
+          "x": 0.574,
+          "y": 0.081,
+          "width": 0.52,
+          "height": 0.1,
+          "backgroundImage": "text_bg.png",
+          "bgOffsetX": -0.03,
+          "bgOffsetY": -0.016,
+          "bgScale": 0.8,
+          "textColor": "#b4989b",
+          "fontSize": 10,
+          "fontFamily": "资源圆体 Bold",
+          "lineHeight": 1.5,
+          "maxLines": 5,
+          "textPaddingX": 0.01,
+          "textMaxWidth": 0.35,
+          "rotation": -2
+        }
+      ]
+    },
+    {
+      "id": "cute_pink_2",
+      "name": "可爱日记2",
+      "parentTemplateId": "cute_pink",
+      "previewImage": "preview_cute_pink_2.webp",
+      "avatarFrameMale": "avatar_frame_male.png",
+      "avatarFrameFemale": "avatar_frame_female.png",
+      "avatarFrameNone": "avatar_frame_none.png",
+      "avatarX": 0.315,
+      "avatarY": 0.073,
+      "zeroLabelAvatarY": 0.095,
+      "avatarSize": 0.1,
+      "avatarFrameOffsetX": -0.004,
+      "avatarFrameOffsetY": 0.005,
+      "avatarFrameScale": 1.25,
+      "avatarFrameDrawOrder": "above",
+      "avatarShape": "circle",
+
+      "commonLabelStyle": {
+        "backgroundImage": "label_bg.png",
+        "bgScale": 0.8,
+        "bgOffsetX": -0.018,
+        "bgOffsetY": 0.00075,
+        "textColor": "#FFFFFF",
+        "fontSize": 12,
+        "textOffsetX": 0.006,
+        "textOffsetY": -0.001,
+        "rotation": -2,
+        "strokeColor": "#ccb3b6",
+        "strokeWidth": 2,
+        "fontFamily": "资源圆体 Bold"
+      },
+
+      "labelSlots": [
+        {
+          "type": "name",
+          "x": 0.44,
+          "y": 0.081,
+          "zeroLabelY": 0.104,
+          "rotation": -2,
+          "backgroundImage": "nickname_deco.png",
+          "bgScale": 1,
+          "bgAnchor": "left",
+          "bgOffsetX": -0.006,
+          "bgOffsetY": 0.003,
+          "textColor": "#a68d8f",
+          "fontSize": 24,
+          "strokeColor": "#fffcfd",
+          "strokeWidth": 3,
+          "stroke2Color": "#d7c3c5",
+          "stroke2Width": 4,
+          "fontFamily": "资源圆体 Bold",
+          "shadowDistance": 3,
+          "shadowColor": "#f9d6cb",
+          "shadowAlpha": 0.37,
+          "shadowExpand": 4
+        },
+        {
+          "type": "标签2",
+          "x": 0.381,
+          "y": 0.1535,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签3",
+          "x": 0.508,
+          "y": 0.1504,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签4",
+          "x": 0.635,
+          "y": 0.1473,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签1",
+          "x": 0.254,
+          "y": 0.1566,
+          "useCommonStyle": true
+        }
+      ],
+      "textSlots": []
+    },
+    {
+      "id": "cute_pink_3",
+      "name": "可爱日记3",
+      "parentTemplateId": "cute_pink",
+      "previewImage": "preview_cute_pink_3.webp",
+      "headerImage": "header_title.png",
+      "headerImageScale": 0.62,
+      "headerImageOffsetX": 0,
+      "headerImageOffsetY": 0.044,
+      "avatarX": -1,
+      "avatarY": -1,
+      "avatarSize": 0,
+      "avatarFrameMale": "avatar_frame_male.png",
+      "avatarFrameFemale": "avatar_frame_female.png",
+      "avatarFrameScale": 1.25,
+      "avatarFrameDrawOrder": "above",
+      "avatarShape": "circle",
+      "labelSlots": [],
+      "textSlots": []
+    }
+  ]
+}

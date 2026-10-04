@@ -1,0 +1,199 @@
+{
+  "_说明": "Endfield 工业风模板配置文件",
+  "_特性说明": {
+    "性别图标分离": "性别图标独立于头像框显示，使用 genderIconMale/Female 字段",
+    "头像框在下": "头像框绘制在头像下方，使用 avatarFrameDrawOrder: below",
+    "正方形头像": "头像为正方形，使用 avatarShape: square"
+  },
+
+  "templates": [
+    {
+      "id": "endfield_1",
+      "name": "工业风1",
+      "parentTemplateId": "Endfield",
+      "previewImage": "preview_endfield_1.jpg",
+      "avatarFrameMale": "头像.png",
+      "avatarFrameFemale": "头像.png",
+      "avatarFrameNone": "头像.png",
+      "avatarX": 0.035,
+      "avatarY": 0.056,
+      "zeroLabelAvatarY": 0.056,
+      "avatarSize": 0.105,
+      "avatarFrameScale": 1.1,
+      "avatarFrameOffsetX": 0.0,
+      "avatarFrameOffsetY": 0.0,
+      "avatarFrameDrawOrder": "below",
+      "avatarShape": "square",
+      "genderIconMale": "男.png",
+      "genderIconFemale": "女.png",
+      "genderIconX": 0.005,
+      "genderIconY": 0.0025,
+      "genderIconSize": 0.028,
+      "genderIconFollows": "name",
+
+      "commonLabelStyle": {
+        "backgroundImage": "标签.png",
+        "bgScale": 0.9,
+        "bgOffsetX": -0.038,
+        "bgOffsetY": 0.0002,
+        "textColor": "#4a4a4a",
+        "fontSize": 8,
+        "textOffsetX": 0.011,
+        "fontWeight": 700,
+        "rotation": 0
+      },
+
+      "labelSlots": [
+        {
+          "type": "name",
+          "x": 0.197,
+          "y": 0.055,
+          "zeroLabelY": 0.077,
+          "rotation": 0,
+          "backgroundImage": "name.png",
+          "bgScale": 0.85,
+          "bgAnchor": "left",
+          "textAlign": "center",
+          "textOffsetY": 0.0025,
+          "shrinkAfterChars": 8,
+          "followBoundsSource": "background",
+          "bgOffsetX": -0.022,
+          "bgOffsetY": -0.0012,
+          "textColor": "#333333",
+          "fontSize": 15,
+          "fontWeight": 600
+        },
+        {
+          "type": "标签1",
+          "x": 0.22,
+          "y": 0.095,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签2",
+          "x": 0.35,
+          "y": 0.095,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签3",
+          "x": 0.222,
+          "y": 0.117,
+          "bgOffsetX": -0.04,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签4",
+          "x": 0.351,
+          "y": 0.117,
+          "bgOffsetX": -0.04,
+          "useCommonStyle": true
+        }
+      ],
+      "textSlots": [
+        {
+          "id": "text_block_1",
+          "x": 0.468,
+          "y": 0.057,
+          "width": 0.5,
+          "height": 0.12,
+          "backgroundImage": "textbg.png",
+          "bgOffsetX": -0.02,
+          "bgOffsetY": -0.014,
+          "bgScale": 0.9,
+          "textColor": "#5a5a5a",
+          "fontSize": 10,
+          "fontWeight": 550,
+          "lineHeight": 1.6,
+          "maxLines": 5,
+          "textPaddingX": 0.01,
+          "textMaxWidth": 0.4,
+          "rotation": 0
+        }
+      ]
+    },
+    {
+      "id": "endfield_2",
+      "name": "工业风2",
+      "parentTemplateId": "Endfield",
+      "previewImage": "preview_endfield_2.jpg",
+      "avatarFrameMale": "头像.png",
+      "avatarFrameFemale": "头像.png",
+      "avatarFrameNone": "头像.png",
+      "avatarX": 0.18,
+      "avatarY": 0.053,
+      "zeroLabelAvatarY": 0.053,
+      "avatarSize": 0.11,
+      "avatarFrameScale": 1.1,
+      "avatarFrameOffsetX": -0.001087,
+      "avatarFrameOffsetY": 0.00022,
+      "avatarFrameDrawOrder": "below",
+      "avatarShape": "square",
+      "genderIconMale": "男.png",
+      "genderIconFemale": "女.png",
+      "genderIconX": 0.006,
+      "genderIconY": 0.00271,
+      "genderIconSize": 0.028,
+      "genderIconFollows": "name",
+
+      "commonLabelStyle": {
+        "backgroundImage": "标签.png",
+        "bgScale": 0.87,
+        "bgOffsetX": -0.035,
+        "bgOffsetY": 0.0004,
+        "textColor": "#4a4a4a",
+        "fontSize": 8,
+        "textOffsetX": 0.011,
+        "fontWeight": 700,
+        "rotation": 0
+      },
+
+      "labelSlots": [
+        {
+          "type": "name",
+          "x": 0.36,
+          "y": 0.057,
+          "zeroLabelY": 0.079,
+          "rotation": 0,
+          "backgroundImage": "name.png",
+          "bgScale": 0.9,
+          "bgAnchor": "left",
+          "textAlign": "center",
+          "textOffsetY": 0.0025,
+          "shrinkAfterChars": 8,
+          "followBoundsSource": "background",
+          "bgOffsetX": -0.022,
+          "bgOffsetY": -0.001,
+          "textColor": "#333333",
+          "fontSize": 16,
+          "fontWeight": 700
+        },
+        {
+          "type": "标签1",
+          "x": 0.382,
+          "y": 0.107,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签2",
+          "x": 0.512,
+          "y": 0.107,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签3",
+          "x": 0.642,
+          "y": 0.107,
+          "useCommonStyle": true
+        },
+        {
+          "type": "标签4",
+          "x": 0.772,
+          "y": 0.107,
+          "useCommonStyle": true
+        }
+      ],
+      "textSlots": []
+    }
+  ]
+}
