@@ -319,8 +319,8 @@ describe('ImageSearchDialog', () => {
       externalId: String(index + 1),
       kind: 'character' as const,
       name: `角色 ${index + 1}`,
-      thumbnailUrl: `https://bangumi-api.acg-dna.top/v1/image?id=${index + 1}`,
-      downloadUrl: `https://bangumi-api.acg-dna.top/v1/image?id=${index + 1}`,
+      thumbnailUrl: `https://lain.bgm.tv/pic/crt/l/${index + 1}.jpg`,
+      downloadUrl: `https://lain.bgm.tv/pic/crt/l/${index + 1}.jpg`,
       originalUrl: `https://lain.bgm.tv/pic/crt/l/${index + 1}.jpg`,
       sourceUrl: `https://bgm.tv/character/${index + 1}`,
     }))
@@ -449,8 +449,8 @@ describe('ImageSearchDialog', () => {
       name: '后藤一里',
       nativeName: '後藤ひとり',
       alternateName: '後藤ひとり',
-      thumbnailUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=87968',
-      downloadUrl: 'https://bangumi-api.acg-dna.top/v1/image?id=87968',
+      thumbnailUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
+      downloadUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
       originalUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
       sourceUrl: 'https://bgm.tv/character/87968',
     }
