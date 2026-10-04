@@ -434,7 +434,7 @@ export function ProfilePanel() {
             </div>
           ) : (
             <p className={'profile-empty-note'}>
-              经典画布没有 APP 资料子模板，请先选择“可爱日记”或“工业风”。
+              经典画布没有资料子模板，请先选择“可爱日记”或“工业风”。
             </p>
           )}
         </section>

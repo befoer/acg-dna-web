@@ -505,7 +505,7 @@ export function AppearancePanel({
           <div className={'appearance-section-heading'}>
             <div>
               <strong>装饰素材</strong>
-              <small>来自 APP 创作页，可叠加使用并进入 PNG</small>
+              <small>可叠加使用，并随作品一起导出 PNG</small>
             </div>
           </div>
           <div className={'decoration-preset-grid'}>
