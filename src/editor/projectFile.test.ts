@@ -68,6 +68,37 @@ describe('portable project file', () => {
     ).toEqual([0, 1, 2, 253, 254, 255])
   })
 
+  it('round-trips a referenced remote image URL', async () => {
+    const document = createStarterGraph(EXPORTED_AT)
+    document.categories[0]!.attributes[0]!.imageAssetId = 'asset-bangumi'
+    const remoteUrl = 'https://lain.bgm.tv/pic/crt/l/example.jpg'
+    const serialized = await serializeProjectFile(
+      {
+        document,
+        savedAt: EXPORTED_AT,
+        assets: [
+          {
+            id: 'asset-bangumi',
+            fileName: '小叽-bangumi-32.jpg',
+            mimeType: 'image/jpeg',
+            byteLength: 0,
+            blob: new Blob([], { type: 'image/jpeg' }),
+            remoteUrl,
+          },
+        ],
+      },
+      EXPORTED_AT,
+    )
+
+    const parsed = parseProjectFileText(serialized)
+
+    expect(parsed.assets[0]).toMatchObject({
+      id: 'asset-bangumi',
+      byteLength: 0,
+      remoteUrl,
+    })
+  })
+
   it('rejects unsupported versions and missing referenced images', async () => {
     const serialized = await serializeProjectFile(
       snapshotWithImage(),

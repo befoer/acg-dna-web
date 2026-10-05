@@ -20,6 +20,7 @@ interface SerializedProjectAsset {
   mimeType: string
   byteLength: number
   dataBase64: string
+  remoteUrl?: string
   source?: ImageAssetSource
 }
 
@@ -97,6 +98,7 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
   const mimeType = readNonEmptyString(record, 'mimeType', path)
   const byteLength = record.byteLength
   const dataBase64 = record.dataBase64
+  const remoteUrl = record.remoteUrl
   const source = readImageAssetSource(record.source)
 
   if (!isAcceptedLocalImageMimeType(mimeType)) {
@@ -105,14 +107,13 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
   if (
     typeof byteLength !== 'number' ||
     !Number.isInteger(byteLength) ||
-    byteLength <= 0 ||
+    byteLength < 0 ||
     byteLength > MAX_LOCAL_IMAGE_BYTES
   ) {
     throw new ProjectFileError(path + '.byteLength 无效')
   }
   if (
     typeof dataBase64 !== 'string' ||
-    dataBase64.length === 0 ||
     dataBase64.length % 4 !== 0 ||
     !/^[a-z0-9+/]*={0,2}$/i.test(dataBase64)
   ) {
@@ -128,6 +129,15 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
   if (binary.length !== byteLength) {
     throw new ProjectFileError(path + ' 的图片大小与记录不一致')
   }
+  if (
+    remoteUrl !== undefined &&
+    (typeof remoteUrl !== 'string' || !remoteUrl.startsWith('https://'))
+  ) {
+    throw new ProjectFileError(path + '.remoteUrl 无效')
+  }
+  if (byteLength === 0 && typeof remoteUrl !== 'string') {
+    throw new ProjectFileError(path + '.remoteUrl 缺失')
+  }
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index)
@@ -138,6 +148,7 @@ function decodeAsset(value: unknown, index: number): StoredLocalImageAsset {
     mimeType,
     byteLength,
     blob: new Blob([bytes], { type: mimeType }),
+    ...(typeof remoteUrl === 'string' ? { remoteUrl } : {}),
     ...(source ? { source } : {}),
   }
 }
@@ -178,6 +189,7 @@ export async function serializeProjectFile(
       mimeType: asset.mimeType,
       byteLength: asset.byteLength,
       dataBase64: await encodeBlob(asset.blob),
+      ...(asset.remoteUrl ? { remoteUrl: asset.remoteUrl } : {}),
       ...(asset.source ? { source: asset.source } : {}),
     })),
   )

@@ -158,6 +158,10 @@ function openDatabase(
 function isStoredAsset(value: unknown): value is StoredLocalImageAsset {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
+  const remoteUrl = record.remoteUrl
+  const hasValidRemoteUrl =
+    remoteUrl === undefined ||
+    (typeof remoteUrl === 'string' && remoteUrl.startsWith('https://'))
   return (
     typeof record.id === 'string' &&
     record.id.trim().length > 0 &&
@@ -166,7 +170,9 @@ function isStoredAsset(value: unknown): value is StoredLocalImageAsset {
     typeof record.mimeType === 'string' &&
     typeof record.byteLength === 'number' &&
     Number.isFinite(record.byteLength) &&
-    record.blob instanceof Blob
+    record.blob instanceof Blob &&
+    hasValidRemoteUrl &&
+    (typeof remoteUrl === 'string' || record.byteLength > 0)
   )
 }
 
@@ -242,6 +248,9 @@ function parseProjectAssetRecord(
     mimeType: record.mimeType,
     byteLength: record.byteLength,
     blob: record.blob,
+    ...(typeof record.remoteUrl === 'string'
+      ? { remoteUrl: record.remoteUrl }
+      : {}),
     ...(source ? { source } : {}),
   }
 }

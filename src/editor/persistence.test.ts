@@ -59,6 +59,33 @@ describe('project persistence snapshot', () => {
     expect(snapshot.assets[0]).not.toHaveProperty('objectUrl')
     expect(snapshot.assets[0]).not.toHaveProperty('image')
   })
+
+  it('keeps a remote image URL in the persisted asset record', () => {
+    const document = createStarterGraph('2026-07-16T00:00:00.000Z')
+    const remoteUrl = 'https://lain.bgm.tv/pic/crt/l/example.jpg'
+    const asset: LocalImageAsset = {
+      id: 'asset-remote',
+      fileName: 'cover.jpg',
+      mimeType: 'image/jpeg',
+      byteLength: 0,
+      blob: new Blob([], { type: 'image/jpeg' }),
+      objectUrl: remoteUrl,
+      image: documentImage(),
+      remoteUrl,
+    }
+
+    const snapshot = createPersistedSnapshot(
+      document,
+      { [asset.id]: asset },
+      '2026-07-16T01:00:00.000Z',
+    )
+
+    expect(snapshot.assets[0]).toMatchObject({
+      id: 'asset-remote',
+      byteLength: 0,
+      remoteUrl,
+    })
+  })
 })
 
 function documentImage(): HTMLImageElement {

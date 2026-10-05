@@ -1,6 +1,10 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { readImageAssetSource } from './assets'
+import {
+  loadOnlineImageAsset,
+  readImageAssetSource,
+  storeLocalImageAsset,
+} from './assets'
 
 describe('image asset source', () => {
   it('preserves the Bangumi search seed used for AniList candidates', () => {
@@ -30,5 +34,47 @@ describe('image asset source', () => {
       name: '小叽',
       nativeName: 'ちぃ',
     })
+  })
+
+  it('stores a Bangumi image URL without downloading the image', async () => {
+    class FakeImage {
+      decoding = 'auto'
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      private currentSrc = ''
+
+      set src(value: string) {
+        this.currentSrc = value
+        queueMicrotask(() => this.onload?.())
+      }
+
+      get src() {
+        return this.currentSrc
+      }
+    }
+    const fetchMock = vi.fn()
+    vi.stubGlobal('Image', FakeImage)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const asset = await loadOnlineImageAsset({
+      provider: 'bangumi',
+      externalId: '32',
+      kind: 'character',
+      name: '小叽',
+      thumbnailUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
+      downloadUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
+      originalUrl: 'https://lain.bgm.tv/pic/crt/l/example.jpg',
+      sourceUrl: 'https://bgm.tv/character/32',
+    })
+    const stored = storeLocalImageAsset(asset)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(asset.remoteUrl).toBe('https://lain.bgm.tv/pic/crt/l/example.jpg')
+    expect(asset.objectUrl).toBe(asset.remoteUrl)
+    expect(stored).toMatchObject({
+      remoteUrl: asset.remoteUrl,
+      byteLength: 0,
+    })
+    vi.unstubAllGlobals()
   })
 })

@@ -23,6 +23,7 @@ export interface LocalImageAsset {
   blob: Blob
   objectUrl: string
   image: HTMLImageElement
+  remoteUrl?: string
   source?: ImageAssetSource
 }
 
@@ -116,6 +117,7 @@ export interface StoredLocalImageAsset {
   mimeType: string
   byteLength: number
   blob: Blob
+  remoteUrl?: string
   source?: ImageAssetSource
 }
 
@@ -202,6 +204,31 @@ export async function loadOnlineImageAsset(
   signal?: AbortSignal,
   searchSeed?: OnlineImageSearchResult,
 ): Promise<LocalImageAsset> {
+  const resolvedSearchSeed =
+    searchSeed?.provider === 'bangumi'
+      ? searchSeed
+      : result.provider === 'bangumi'
+        ? result
+        : undefined
+  if (result.provider === 'bangumi') {
+    const remoteUrl = result.originalUrl || result.downloadUrl
+    return createRuntimeImageAsset({
+      id: createEntityId('asset'),
+      fileName: safeRemoteFileName(result, 'image/jpeg'),
+      mimeType: 'image/jpeg',
+      byteLength: 0,
+      blob: new Blob([], { type: 'image/jpeg' }),
+      remoteUrl,
+      source: {
+        provider: result.provider,
+        externalId: result.externalId,
+        sourceUrl: result.sourceUrl,
+        originalUrl: remoteUrl,
+        fetchedAt: new Date().toISOString(),
+        ...(resolvedSearchSeed ? { searchSeed: resolvedSearchSeed } : {}),
+      },
+    })
+  }
   let response: Response
   let blob: Blob
   const request = createTimedAbortSignal(
@@ -241,12 +268,6 @@ export async function loadOnlineImageAsset(
   if (blob.size <= 0 || blob.size > MAX_LOCAL_IMAGE_BYTES) {
     throw new LocalImageError('在线图片为空或超过 15 MB')
   }
-  const resolvedSearchSeed =
-    searchSeed?.provider === 'bangumi'
-      ? searchSeed
-      : result.provider === 'bangumi'
-        ? result
-        : undefined
   return createRuntimeImageAsset({
     id: createEntityId('asset'),
     fileName: safeRemoteFileName(result, mimeType),
@@ -267,7 +288,7 @@ export async function loadOnlineImageAsset(
 async function createRuntimeImageAsset(
   source: StoredLocalImageAsset,
 ): Promise<LocalImageAsset> {
-  const objectUrl = URL.createObjectURL(source.blob)
+  const objectUrl = source.remoteUrl ?? URL.createObjectURL(source.blob)
   try {
     const image = await decodeImage(objectUrl)
     return {
@@ -276,7 +297,7 @@ async function createRuntimeImageAsset(
       image,
     }
   } catch (error) {
-    URL.revokeObjectURL(objectUrl)
+    if (!source.remoteUrl) URL.revokeObjectURL(objectUrl)
     throw error
   }
 }
@@ -289,6 +310,12 @@ export async function restoreLocalImageAsset(
   }
   if (!isAcceptedLocalImageMimeType(source.mimeType)) {
     throw new LocalImageError('本地图片记录格式不受支持')
+  }
+  if (source.remoteUrl !== undefined) {
+    if (!source.remoteUrl.startsWith('https://')) {
+      throw new LocalImageError('远程图片地址无效')
+    }
+    return createRuntimeImageAsset(source)
   }
   if (
     source.byteLength !== source.blob.size ||
@@ -309,10 +336,11 @@ export function storeLocalImageAsset(
     mimeType: asset.mimeType,
     byteLength: asset.byteLength,
     blob: asset.blob,
+    ...(asset.remoteUrl ? { remoteUrl: asset.remoteUrl } : {}),
     ...(asset.source ? { source: asset.source } : {}),
   }
 }
 
 export function revokeLocalImageAsset(asset: LocalImageAsset): void {
-  URL.revokeObjectURL(asset.objectUrl)
+  if (!asset.remoteUrl) URL.revokeObjectURL(asset.objectUrl)
 }
