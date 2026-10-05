@@ -238,7 +238,7 @@ describe('ImageSearchDialog', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce())
   })
 
-  it('loads result thumbnails with anonymous CORS', async () => {
+  it('loads Bangumi result thumbnails without CORS mode', async () => {
     searchMock.mockResolvedValue({
       provider: 'bangumi',
       results: [
@@ -267,10 +267,9 @@ describe('ImageSearchDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     await screen.findByText('找到 1 个 Bangumi 结果。')
 
-    expect(container.querySelector('.image-search-result img')).toHaveAttribute(
-      'crossorigin',
-      'anonymous',
-    )
+    expect(
+      container.querySelector('.image-search-result img'),
+    ).not.toHaveAttribute('crossorigin')
   })
 
   it('keeps the six most recent search terms below the search field', async () => {

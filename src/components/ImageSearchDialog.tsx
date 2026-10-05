@@ -716,7 +716,6 @@ export function ImageSearchDialog({
                         onClick={() => void selectWork(work)}
                       >
                         <img
-                          crossOrigin="anonymous"
                           src={work.thumbnailUrl}
                           alt=""
                           loading={index === 0 ? 'eager' : 'lazy'}
@@ -755,7 +754,11 @@ export function ImageSearchDialog({
                         onClick={() => void selectResult(result)}
                       >
                         <img
-                          crossOrigin="anonymous"
+                          crossOrigin={
+                            result.provider === 'anilist'
+                              ? 'anonymous'
+                              : undefined
+                          }
                           src={result.thumbnailUrl}
                           alt=""
                           loading={index === 0 ? 'eager' : 'lazy'}

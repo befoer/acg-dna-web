@@ -443,7 +443,11 @@ export function LocalImageEditor({
                           }}
                         >
                           <img
-                            crossOrigin={'anonymous'}
+                            crossOrigin={
+                              candidate.provider === 'anilist'
+                                ? 'anonymous'
+                                : undefined
+                            }
                             src={candidate.thumbnailUrl}
                             alt={''}
                             loading={'lazy'}
