@@ -110,6 +110,14 @@ export function OshiImportDialog() {
         at: timestamp(),
       })
     }
+    // 导入的角色以头像为主，关掉画布的「分类显示」，避免分类大圆遮住头像
+    if (state.document.canvas.labelSettings.showCategoryNodes) {
+      dispatch({
+        type: 'label-settings-changed',
+        patch: { showCategoryNodes: false },
+        at: timestamp(),
+      })
+    }
     // 等新节点进入编辑器状态后再逐个挂图片
     await nextFrame()
     let images = 0
