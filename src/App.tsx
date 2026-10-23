@@ -1,4 +1,5 @@
 import { EditorWorkspace } from './components/EditorWorkspace'
+import { OshiImportDialog } from './components/OshiImportDialog'
 import type { GraphDocument } from './domain/graph'
 import { EditorProvider } from './editor/EditorProvider'
 import type { ProjectRepository } from './editor/persistence'
@@ -21,6 +22,7 @@ export default function App({
       autosaveDelayMs={autosaveDelayMs}
     >
       <EditorWorkspace />
+      <OshiImportDialog />
     </EditorProvider>
   )
 }

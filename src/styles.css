@@ -6038,3 +6038,64 @@ button.persistence-retry {
 .tree-row-depth-0 .tree-weight-control {
   grid-column: 8;
 }
+
+.oshi-import-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  max-height: 46dvh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.oshi-import-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.oshi-import-list li.is-skipped {
+  opacity: 0.45;
+}
+
+.oshi-import-list img,
+.oshi-import-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.oshi-import-avatar {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--panel-raised);
+  font-weight: 700;
+}
+
+.oshi-import-list li > span {
+  display: grid;
+  min-width: 0;
+}
+
+.oshi-import-list strong,
+.oshi-import-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oshi-import-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
