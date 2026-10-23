@@ -2,7 +2,7 @@ import { createContext, useContext, type Dispatch } from 'react'
 
 import type { EditorAction, EditorState } from './editorReducer'
 import type { LocalImageAsset } from './assets'
-import type { GraphDocument } from '../domain/graph'
+import type { GraphDocument, GraphImageTransform } from '../domain/graph'
 import type { ProjectSummary } from './persistence'
 import type { OnlineImageSearchResult } from '../search/onlineImageSearch'
 
@@ -19,7 +19,11 @@ export interface ProjectPreview {
 export interface EditorContextValue {
   state: EditorState
   dispatch: Dispatch<EditorAction>
-  attachImage: (nodeId: string, file: File) => Promise<string | null>
+  attachImage: (
+    nodeId: string,
+    file: File,
+    imageTransform?: GraphImageTransform,
+  ) => Promise<string | null>
   attachOnlineImage: (
     nodeId: string,
     result: OnlineImageSearchResult,

@@ -15,6 +15,7 @@ import {
   DEFAULT_IMAGE_TRANSFORM,
   findGraphNode,
   type GraphDocument,
+  type GraphImageTransform,
 } from '../domain/graph'
 import { userErrorMessage } from '../errors/userErrorMessage'
 import {
@@ -842,49 +843,57 @@ export function EditorProvider({
     }
   }, [])
 
-  const attachImage = useCallback(async (nodeId: string, file: File) => {
-    if (projectActionPendingRef.current) {
-      dispatch({
-        type: 'status-changed',
-        message: '项目操作完成后再选择图片',
-      })
-      return null
-    }
-    const requestToken = Symbol(nodeId)
-    imageRequestTokensRef.current.set(nodeId, requestToken)
-    dispatch({ type: 'status-changed', message: '正在读取本地图片…' })
-    try {
-      const asset = await loadLocalImageAsset(file)
-      const currentState = stateRef.current
-      const currentToken = imageRequestTokensRef.current.get(nodeId)
-      const target = findGraphNode(currentState.document, nodeId)
-      if (!mountedRef.current || currentToken !== requestToken || !target) {
-        revokeLocalImageAsset(asset)
+  const attachImage = useCallback(
+    async (
+      nodeId: string,
+      file: File,
+      imageTransform?: GraphImageTransform,
+    ) => {
+      if (projectActionPendingRef.current) {
+        dispatch({
+          type: 'status-changed',
+          message: '项目操作完成后再选择图片',
+        })
         return null
       }
+      const requestToken = Symbol(nodeId)
+      imageRequestTokensRef.current.set(nodeId, requestToken)
+      dispatch({ type: 'status-changed', message: '正在读取本地图片…' })
+      try {
+        const asset = await loadLocalImageAsset(file)
+        const currentState = stateRef.current
+        const currentToken = imageRequestTokensRef.current.get(nodeId)
+        const target = findGraphNode(currentState.document, nodeId)
+        if (!mountedRef.current || currentToken !== requestToken || !target) {
+          revokeLocalImageAsset(asset)
+          return null
+        }
 
-      imageRequestTokensRef.current.delete(nodeId)
-      const previousAssetId = target.node.imageAssetId
-      knownAssetsRef.current.set(asset.id, asset)
-      dispatch({
-        type: 'asset-attached',
-        nodeId,
-        asset,
-        ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
-        at: new Date().toISOString(),
-      })
-      return asset.id
-    } catch (error) {
-      if (imageRequestTokensRef.current.get(nodeId) !== requestToken) {
+        imageRequestTokensRef.current.delete(nodeId)
+        const previousAssetId = target.node.imageAssetId
+        knownAssetsRef.current.set(asset.id, asset)
+        dispatch({
+          type: 'asset-attached',
+          nodeId,
+          asset,
+          ...(imageTransform ? { imageTransform } : {}),
+          ...(previousAssetId ? { replacedAssetId: previousAssetId } : {}),
+          at: new Date().toISOString(),
+        })
+        return asset.id
+      } catch (error) {
+        if (imageRequestTokensRef.current.get(nodeId) !== requestToken) {
+          return null
+        }
+        imageRequestTokensRef.current.delete(nodeId)
+        if (!mountedRef.current) return null
+        const message = userErrorMessage(error, '图片读取失败')
+        dispatch({ type: 'status-changed', message })
         return null
       }
-      imageRequestTokensRef.current.delete(nodeId)
-      if (!mountedRef.current) return null
-      const message = userErrorMessage(error, '图片读取失败')
-      dispatch({ type: 'status-changed', message })
-      return null
-    }
-  }, [])
+    },
+    [],
+  )
 
   const attachOnlineImage = useCallback(
     async (

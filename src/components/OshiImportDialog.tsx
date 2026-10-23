@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { createAttribute, createCategory } from '../domain/graph'
+import {
+  createAttribute,
+  createCategory,
+  DEFAULT_IMAGE_TRANSFORM,
+} from '../domain/graph'
 import { useEditor } from '../editor/editorContext'
 import {
   clearOshiImportParam,
@@ -17,6 +21,8 @@ import {
 
 const NEW_CATEGORY = '__new__'
 const NEW_CATEGORY_NAME = '推日角色'
+// 角色头像顶部定焦（与 Bangumi 角色图一致），避免脸被裁掉
+const TOP_FOCUS = { ...DEFAULT_IMAGE_TRANSFORM, offsetY: 1 }
 const timestamp = () => new Date().toISOString()
 const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 30))
 
@@ -112,10 +118,10 @@ export function OshiImportDialog() {
       setProgress(`正在保存头像 ${index + 1} / ${withImages.length}`)
       const file = oshiImageFile(entry.character)
       if (!file) continue
-      let assetId = await attachImage(entry.attribute.id, file)
+      let assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
       if (!assetId) {
         await nextFrame()
-        assetId = await attachImage(entry.attribute.id, file)
+        assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
       }
       if (assetId) images++
     }
