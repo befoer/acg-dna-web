@@ -26,6 +26,7 @@ import { GlobalLabelSettingsPanel } from './GlobalLabelSettingsPanel'
 import { LocalImageEditor } from './LocalImageEditor'
 import { ImageSearchDialog } from './ImageSearchDialog'
 import { NodeCreateDialog } from './NodeCreateDialog'
+import { OshiSendDialog } from './OshiSendDialog'
 import type { CanvasNodeActionRequest } from './canvasNodeActions'
 import type { OnlineImageKind } from '../search/onlineImageSearch'
 import eyeIconUrl from '../assets/eye.svg'
@@ -1107,6 +1108,7 @@ export function EditorPanel({
   const [showGlobalLabelSettings, setShowGlobalLabelSettings] = useState(false)
   const [showTextImport, setShowTextImport] = useState(false)
   const [showTextExport, setShowTextExport] = useState(false)
+  const [showOshiSend, setShowOshiSend] = useState(false)
   const flatImportTargets: GraphTextFlatTarget[] = [
     ...state.document.categories.map((category) => ({
       id: category.id,
@@ -1191,6 +1193,15 @@ export function EditorPanel({
           >
             导出数据
           </button>
+          <button
+            type={'button'}
+            className={'ghost-button is-rectangular-control'}
+            aria-label={'发送到推日'}
+            title={'把一个分类里的角色发到推日 · 角色创作日历'}
+            onClick={() => setShowOshiSend(true)}
+          >
+            发到推日
+          </button>
         </div>
       </div>
       <p className="sr-only">{state.statusMessage}</p>
@@ -1238,6 +1249,9 @@ export function EditorPanel({
             setShowTextImport(false)
           }}
         />
+      ) : null}
+      {showOshiSend ? (
+        <OshiSendDialog onClose={() => setShowOshiSend(false)} />
       ) : null}
       {showTextExport ? (
         <GraphTextExportDialog
