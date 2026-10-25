@@ -6050,6 +6050,22 @@ button.persistence-retry {
   list-style: none;
 }
 
+.oshi-import-progress {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 100;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel, #24242b);
+  color: var(--text, #f3f3f5);
+  box-shadow: 0 4px 20px #0003;
+  font-size: 13px;
+  pointer-events: none;
+}
+
 .oshi-import-list li {
   display: flex;
   align-items: center;

@@ -79,6 +79,13 @@ export function OshiImportDialog() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [characters, busy])
 
+  if (busy) {
+    return (
+      <div className="oshi-import-progress" role="status" aria-live="polite">
+        {progress || '正在导入图片…'}
+      </div>
+    )
+  }
   if (!characters) return null
   const pending = characters.filter((item) => !existingNames.has(item.name))
   const close = () => {
@@ -88,6 +95,7 @@ export function OshiImportDialog() {
   const run = async () => {
     if (!pending.length) return
     setBusy(true)
+    setProgress('正在导入图片…')
     const entries = pending.map((character) => ({
       character,
       attribute: { ...createAttribute(), name: character.name },
@@ -123,15 +131,19 @@ export function OshiImportDialog() {
     let images = 0
     const withImages = entries.filter((entry) => entry.character.image)
     for (const [index, entry] of withImages.entries()) {
-      setProgress(`正在保存头像 ${index + 1} / ${withImages.length}`)
-      const file = oshiImageFile(entry.character)
-      if (!file) continue
-      let assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
-      if (!assetId) {
-        await nextFrame()
-        assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
+      setProgress(`正在导入图片 ${index + 1} / ${withImages.length}`)
+      try {
+        const file = oshiImageFile(entry.character)
+        if (!file) continue
+        let assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
+        if (!assetId) {
+          await nextFrame()
+          assetId = await attachImage(entry.attribute.id, file, TOP_FOCUS)
+        }
+        if (assetId) images++
+      } catch {
+        // 单张图片无效时保留已导入的角色，并继续处理其余图片。
       }
-      if (assetId) images++
     }
     const target = opener.current
     if (target && !target.window.closed) {
