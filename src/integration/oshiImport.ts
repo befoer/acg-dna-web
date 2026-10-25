@@ -10,10 +10,10 @@ export const OSHI_IMPORTED = 'acg-dna:imported'
 export const OSHI_CHARACTERS = 'oshi-calendar:characters'
 export const OSHI_PROTOCOL_VERSION = 1
 
-/** 推日运行在本机服务（4173）或开发服务器（5173）上。 */
+/** 推日运行在本机服务（36524）或开发服务器（5173）上。 */
 export const OSHI_ALLOWED_ORIGINS = [
-  'http://127.0.0.1:4173',
-  'http://localhost:4173',
+  'http://127.0.0.1:36524',
+  'http://localhost:36524',
   'http://127.0.0.1:5173',
   'http://localhost:5173',
 ] as const

@@ -8,7 +8,7 @@ import type { GraphCategory } from '../domain/graph'
 import type { LocalImageAsset } from '../editor/assets'
 import { isAllowedOshiOrigin, OSHI_PROTOCOL_VERSION } from './oshiImport'
 
-export const OSHI_URL = 'http://127.0.0.1:4173/'
+export const OSHI_URL = 'http://127.0.0.1:36524/'
 export const OSHI_SEND_READY = 'oshi-calendar:ready'
 export const OSHI_SEND_IMPORTED = 'oshi-calendar:imported'
 export const ACG_CHARACTERS = 'acg-dna:characters'

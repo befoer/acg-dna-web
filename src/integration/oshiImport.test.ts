@@ -14,7 +14,9 @@ describe('推日联动', () => {
   it('只认 ?import=oshi-calendar 和本机推日地址', () => {
     expect(isOshiImportRequest('?import=oshi-calendar')).toBe(true)
     expect(isOshiImportRequest('?import=other')).toBe(false)
-    expect(isAllowedOshiOrigin('http://127.0.0.1:4173')).toBe(true)
+    expect(isAllowedOshiOrigin('http://127.0.0.1:36524')).toBe(true)
+    expect(isAllowedOshiOrigin('http://localhost:36524')).toBe(true)
+    expect(isAllowedOshiOrigin('http://127.0.0.1:4173')).toBe(false)
     expect(isAllowedOshiOrigin('https://evil.example')).toBe(false)
   })
 
